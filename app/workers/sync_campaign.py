@@ -128,9 +128,7 @@ async def _sync_campaign(run_id: str) -> None:
         }
         await _log_step(db, run, step_order, "verify_campaign", {}, _already_done(verification))
 
-        run.run_status = "succeeded"
-        run.finished_at = datetime.now(timezone.utc)
-        db.commit()
+        _mark_succeeded(db, run)
     except Exception as exc:
         run = db.get(CampaignRun, run_id)
         if run:
@@ -193,6 +191,16 @@ def _mark_failed(db: Session, run: CampaignRun, message: str) -> None:
     run.run_status = "failed"
     run.error_text = message
     run.finished_at = datetime.now(timezone.utc)
+    if run.request:
+        run.request.status = "failed"
+    db.commit()
+
+
+def _mark_succeeded(db: Session, run: CampaignRun) -> None:
+    run.run_status = "succeeded"
+    run.finished_at = datetime.now(timezone.utc)
+    if run.request:
+        run.request.status = "synced"
     db.commit()
 
 
