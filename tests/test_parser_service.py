@@ -76,3 +76,29 @@ One question.
     assert len(parsed["campaigns"]) == 2
     assert parsed["steps"][0]["body_variants"][0]["body"].startswith("{Hi|Hey}")
     assert "Micro-Poll" not in parsed["steps"][1]["body_variants"][0]["body"]
+
+
+def test_repository_sequence_name_miss_warns_before_falling_back_to_first():
+    text = """
+Benchmark
+
+Subject Line Options:
+1. Quick Benchmark
+
+Email 1
+Body one.
+
+Micro-Poll
+
+Subject Line Options:
+1. Quick Poll
+
+Email 1
+Body two.
+"""
+    parsed = parse_messaging_file(text, selected_sequence_name="Benchmark v3")
+
+    assert parsed["selected_campaign"] == "Benchmark"
+    assert parsed["warnings"] == [
+        "Requested sequence 'Benchmark v3' was not found; using first parsed sequence 'Benchmark'."
+    ]

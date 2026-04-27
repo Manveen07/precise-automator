@@ -38,13 +38,14 @@ def _split_variants(step_text: str) -> list[dict]:
 def parse_messaging_file(text: str, selected_sequence_name: str | None = None) -> dict:
     repository_campaigns = _parse_repository_campaigns(text)
     if repository_campaigns:
-        selected = _select_campaign(repository_campaigns, selected_sequence_name)
+        selected, warnings = _select_campaign(repository_campaigns, selected_sequence_name)
         return {
             "source_format": "repository",
             "selected_campaign": selected["name"],
             "subjects": selected["subjects"],
             "steps": selected["steps"],
             "campaigns": repository_campaigns,
+            "warnings": warnings,
         }
 
     step_matches = list(STEP_RE.finditer(text))
@@ -58,16 +59,20 @@ def parse_messaging_file(text: str, selected_sequence_name: str | None = None) -
                 "body_variants": _split_variants(text[start:end]),
             }
         )
-    return {"source_format": "step_sections", "subjects": extract_subjects(text), "steps": steps, "campaigns": []}
+    return {"source_format": "step_sections", "subjects": extract_subjects(text), "steps": steps, "campaigns": [], "warnings": []}
 
 
-def _select_campaign(campaigns: list[dict], selected_sequence_name: str | None) -> dict:
+def _select_campaign(campaigns: list[dict], selected_sequence_name: str | None) -> tuple[dict, list[str]]:
     if selected_sequence_name:
         normalized = selected_sequence_name.strip().lower()
         for campaign in campaigns:
             if campaign["name"].lower() == normalized:
-                return campaign
-    return campaigns[0]
+                return campaign, []
+        first = campaigns[0]
+        return first, [
+            f"Requested sequence '{selected_sequence_name.strip()}' was not found; using first parsed sequence '{first['name']}'."
+        ]
+    return campaigns[0], []
 
 
 def _parse_repository_campaigns(text: str) -> list[dict]:

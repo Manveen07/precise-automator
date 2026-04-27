@@ -1,5 +1,6 @@
 from functools import lru_cache
 import os
+from pathlib import Path
 
 from pydantic import AnyHttpUrl, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -15,7 +16,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+psycopg://postgres:postgres@localhost:55432/precise_automator"
     REDIS_URL: str = "redis://localhost:6379/0"
     ANTHROPIC_API_KEY: str = "replace_me"
-    ANTHROPIC_MODEL: str = "claude-sonnet-4-5"
+    ANTHROPIC_MODEL: str = "claude-sonnet-4-20250514"
     SMARTLEAD_WEBHOOK_SECRET: str | None = None
     SLACK_WEBHOOK_URL: AnyHttpUrl | None = None
     INBOX_SHEET_SCRIPT_URL: AnyHttpUrl | None = None
@@ -41,6 +42,14 @@ def get_secret_value(env_name: str) -> str | None:
     value = os.environ.get(env_name)
     if value:
         return value
-    env_values = dotenv_values(".env")
+    env_values = _dotenv_values()
     value = env_values.get(env_name)
     return value if value else None
+
+
+@lru_cache
+def _dotenv_values() -> dict[str, str | None]:
+    env_path = Path(".env")
+    if not env_path.exists():
+        return {}
+    return dict(dotenv_values(env_path))

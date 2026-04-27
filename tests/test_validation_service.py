@@ -50,3 +50,25 @@ def test_follow_up_subject_is_rejected():
     plan = valid_plan()
     plan["sequence"][1]["variants"][0]["subject"] = "bad followup subject"
     assert any("follow-up subjects" in error for error in validate_campaign_plan(plan, {"smartlead_mcp"}))
+
+
+def test_missing_step_one_is_rejected():
+    plan = valid_plan()
+    plan["sequence"] = [plan["sequence"][1]]
+    assert any("sequence must include Step 1" in error for error in validate_campaign_plan(plan, {"smartlead_mcp"}))
+
+
+def test_schedule_hours_are_parsed_not_string_compared():
+    plan = valid_plan()
+    plan["schedule"]["start_hour"] = "9:00"
+    plan["schedule"]["end_hour"] = "6 pm"
+    assert validate_campaign_plan(plan, {"smartlead_mcp"}) == []
+
+
+def test_blocked_phrase_uses_token_boundaries():
+    plan = valid_plan()
+    plan["sequence"][0]["variants"][0]["body"] = "This is guaranteed-not-to-bounce copy."
+    assert validate_campaign_plan(plan, {"smartlead_mcp"}) == []
+
+    plan["sequence"][0]["variants"][0]["body"] = "This is guaranteed copy."
+    assert any("blocked phrase" in error for error in validate_campaign_plan(plan, {"smartlead_mcp"}))

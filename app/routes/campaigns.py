@@ -215,8 +215,8 @@ def revise_draft(
         _record_ai_revision_error(db, campaign, latest_draft.id, revision_instruction, message)
         return _api_or_campaign_redirect(request, {"ok": False, "draft_id": str(latest_draft.id), "errors": [message]}, campaign_id)
 
-    latest_draft.validation_status = "superseded"
     draft, errors = _store_draft(db, campaign, plan, settings.ANTHROPIC_MODEL, commit=False)
+    latest_draft.validation_status = "superseded"
     _upsert_conversation_session(
         db,
         campaign.id,

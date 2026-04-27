@@ -51,11 +51,13 @@ def test_delete_archive_and_analytics_call_shapes():
         await service.get_campaign_analytics(123)
         await service.get_campaign_statistics(123, limit=50, offset=10)
         await service.get_campaign_performance("2026-04-01", "2026-04-27", campaign_ids=[123])
+        await service.add_leads(123, [{"email": "lead@example.com"}])
 
         assert ("patch", "campaigns/123/status", {"status": "ARCHIVED"}) in service.calls
         assert ("delete", "campaigns/123", None) in service.calls
         assert ("get", "campaigns/123/analytics", None) in service.calls
         assert ("get", "campaigns/123/statistics", {"limit": 50, "offset": 10}) in service.calls
+        assert ("post", "campaigns/123/leads", {"lead_list": [{"email": "lead@example.com"}]}) in service.calls
         assert (
             "get",
             "analytics/campaign/overall-stats",
@@ -76,3 +78,9 @@ def test_url_includes_api_key_and_extra_query_params():
         service.url("analytics/campaign/overall-stats", {"campaign_ids": "123", "timezone": "America/New_York"})
         == "https://server.smartlead.ai/api/v1/analytics/campaign/overall-stats?api_key=secret&campaign_ids=123&timezone=America%2FNew_York"
     )
+
+
+def test_campaign_url_points_to_email_campaign_overview():
+    service = SmartleadService("secret")
+    assert service.campaign_url(123) == "https://app.smartlead.ai/app/email-campaign/123/overview"
+    assert service.headers["User-Agent"] == "Precise-Automator/1.0"

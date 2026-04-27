@@ -13,8 +13,26 @@ def seed_defaults(db: Session) -> None:
     workspaces = [
         {
             "workspace_key": "smartlead_mcp",
-            "display_name": "Smartlead MCP",
+            "display_name": "Smartlead MCP (Legacy - no client scope)",
             "api_key_env_name": "SMARTLEAD_MCP_API_KEY",
+        },
+        {
+            "workspace_key": "smartlead_mcp_melior",
+            "display_name": "Smartlead MCP - Melior",
+            "api_key_env_name": "SMARTLEAD_MCP_API_KEY",
+            "client_id": 12256,
+        },
+        {
+            "workspace_key": "smartlead_mcp_avench",
+            "display_name": "Smartlead MCP - Avench",
+            "api_key_env_name": "SMARTLEAD_MCP_API_KEY",
+            "client_id": 88657,
+        },
+        {
+            "workspace_key": "smartlead_mcp_svsg",
+            "display_name": "Smartlead MCP - SVSG",
+            "api_key_env_name": "SMARTLEAD_MCP_API_KEY",
+            "client_id": 145916,
         },
         {
             "workspace_key": "belardi_wong",
@@ -26,6 +44,10 @@ def seed_defaults(db: Session) -> None:
         exists = db.query(SmartleadWorkspace).filter_by(workspace_key=data["workspace_key"]).first()
         if not exists:
             db.add(SmartleadWorkspace(**data))
+        else:
+            for key in ("display_name", "api_key_env_name", "client_id"):
+                if key in data:
+                    setattr(exists, key, data[key])
 
     template = db.query(CampaignTemplate).filter_by(template_key="cold_email_standard_v1").first()
     if not template:

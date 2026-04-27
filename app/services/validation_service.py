@@ -33,6 +33,8 @@ def validate_campaign_plan(plan_data: dict, active_workspace_keys: set[str] | No
         errors.append("tracking must remain disabled for V1")
 
     first_step = min(plan.sequence, key=lambda step: step.step_number)
+    if first_step.step_number != 1:
+        errors.append("sequence must include Step 1")
     for variant in first_step.variants:
         if not variant.subject.strip():
             errors.append("Step 1 variants must include a non-empty subject")
@@ -58,8 +60,15 @@ def _validate_body_copy(body: str) -> list[str]:
         errors.append("body contains malformed merge braces")
     if body.count("{") != body.count("}"):
         errors.append("body contains unbalanced braces")
-    lower = body.lower()
     for phrase in settings.BLOCKED_PHRASES:
-        if phrase.lower() in lower:
+        if _contains_blocked_phrase(body, phrase):
             errors.append(f"body contains blocked phrase: {phrase}")
     return errors
+
+
+def _contains_blocked_phrase(body: str, phrase: str) -> bool:
+    escaped_words = [re.escape(part) for part in phrase.strip().split()]
+    if not escaped_words:
+        return False
+    pattern = r"(?<![\w-])" + r"\s+".join(escaped_words) + r"(?![\w-])"
+    return re.search(pattern, body, flags=re.IGNORECASE) is not None

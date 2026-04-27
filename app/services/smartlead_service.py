@@ -10,7 +10,7 @@ class SmartleadService:
         self.api_key = api_key
         self.headers = {
             "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "User-Agent": "Precise-Automator/1.0",
         }
 
     def url(self, endpoint: str, params: dict | None = None) -> str:
@@ -20,7 +20,7 @@ class SmartleadService:
         return f"{self.BASE_URL}/{endpoint}?{urlencode(query)}"
 
     def campaign_url(self, campaign_id: int) -> str:
-        return f"https://app.smartlead.ai/app/campaign/{campaign_id}"
+        return f"https://app.smartlead.ai/app/email-campaign/{campaign_id}/overview"
 
     async def post(self, endpoint: str, payload: dict) -> dict:
         async with httpx.AsyncClient(timeout=90) as client:
@@ -101,7 +101,7 @@ class SmartleadService:
         return await self.post(f"campaigns/{campaign_id}/email-accounts", {"email_account_ids": email_account_ids})
 
     async def add_leads(self, campaign_id: int, leads: list[dict]) -> dict:
-        return await self.post(f"campaigns/{campaign_id}/leads", {"leads": leads})
+        return await self.post(f"campaigns/{campaign_id}/leads", {"lead_list": leads})
 
     async def create_webhook(self, campaign_id: int, webhook_url: str) -> dict:
         return await self.post(

@@ -1,3 +1,4 @@
+from datetime import datetime, time
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -20,9 +21,14 @@ class CampaignSchedule(BaseModel):
             raise ValueError("days_of_the_week values must be 1 through 7")
         return value
 
+    @field_validator("start_hour", "end_hour", mode="before")
+    @classmethod
+    def normalize_hour(cls, value: str) -> str:
+        return _parse_schedule_time(value).strftime("%H:%M")
+
     @model_validator(mode="after")
     def start_before_end(self) -> "CampaignSchedule":
-        if self.start_hour >= self.end_hour:
+        if _parse_schedule_time(self.start_hour) >= _parse_schedule_time(self.end_hour):
             raise ValueError("schedule start_hour must be before end_hour")
         return self
 
@@ -97,3 +103,17 @@ class CampaignPlan(BaseModel):
         if len(value) > 4:
             raise ValueError("V1 supports at most 4 sequence steps")
         return value
+
+
+def _parse_schedule_time(value: str) -> time:
+    if not isinstance(value, str):
+        raise ValueError("schedule hour must be a string")
+    normalized = value.strip().replace(".", "")
+    candidates = [normalized, normalized.upper(), normalized.lower()]
+    for candidate in candidates:
+        for pattern in ("%H:%M", "%I:%M %p", "%I %p"):
+            try:
+                return datetime.strptime(candidate, pattern).time()
+            except ValueError:
+                continue
+    raise ValueError("schedule hour must use HH:MM or a simple AM/PM time")

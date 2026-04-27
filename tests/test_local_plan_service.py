@@ -31,3 +31,29 @@ def test_build_campaign_plan_from_parsed_repository_input():
     assert plan["sequence"][0]["variants"][0]["subject"] == "Quick Benchmark"
     assert plan["sequence"][1]["variants"][0]["subject"] == ""
     assert "%Signature%" in plan["sequence"][0]["variants"][0]["body"]
+
+
+def test_build_campaign_plan_notes_truncation_and_skipped_empty_steps():
+    plan = build_campaign_plan_from_input(
+        {
+            "workspace_key": "smartlead_mcp",
+            "template_key": "cold_email_standard_v1",
+            "campaign_name": "Darlean Benchmark",
+            "parsed_messaging": {
+                "warnings": ["Parser warning."],
+                "subjects": ["Quick Benchmark"],
+                "steps": [
+                    {"step_number": 1, "body_variants": [{"variant_label": "A", "body": "Body 1"}]},
+                    {"step_number": 2, "body_variants": []},
+                    {"step_number": 3, "body_variants": [{"variant_label": "A", "body": "Body 3"}]},
+                    {"step_number": 4, "body_variants": [{"variant_label": "A", "body": "Body 4"}]},
+                    {"step_number": 5, "body_variants": [{"variant_label": "A", "body": "Body 5"}]},
+                ],
+            },
+        }
+    )
+
+    assert len(plan["sequence"]) == 3
+    assert "Parser warning." in plan["notes_for_operator"]
+    assert "Input had 5 steps; V1 draft includes only the first 4 steps." in plan["notes_for_operator"]
+    assert "Skipped step 2 because no body variants were parsed." in plan["notes_for_operator"]

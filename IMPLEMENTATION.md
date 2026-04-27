@@ -55,7 +55,7 @@ precise-automator/
 │   ├── routes/
 │   │   ├── campaigns.py     UI pages + the bulk of the API
 │   │   ├── workspaces.py    GET /api/workspaces, /api/templates
-│   │   ├── webhooks.py      POST /api/webhooks/smartlead (unauth!)
+│   │   ├── webhooks.py      POST /api/webhooks/smartlead (HMAC/shared-secret auth)
 │   │   ├── leads.py         POST /api/leads/upload (CSV preview only)
 │   │   └── inboxes.py       POST /api/inboxes/recommend (mailbox picker)
 │   ├── services/
@@ -99,13 +99,13 @@ Defined in [app/config.py](app/config.py) via pydantic-settings, loaded from `.e
 | `DATABASE_URL` | `postgresql+psycopg://postgres:postgres@localhost:55432/precise_automator` | local Postgres on **non-standard port 55432** to avoid clashing with system Postgres |
 | `REDIS_URL` | `redis://localhost:6379/0` | RQ backend |
 | `ANTHROPIC_API_KEY` | `replace_me` | required for AI revision; literal string `"replace_me"` is treated as not-configured |
-| `ANTHROPIC_MODEL` | `claude-sonnet-4-5` | model id used for revisions |
-| `SMARTLEAD_WEBHOOK_SECRET` | `None` | declared but **not used** |
+| `ANTHROPIC_MODEL` | `claude-sonnet-4-20250514` | model id used for revisions |
+| `SMARTLEAD_WEBHOOK_SECRET` | `None` | optional HMAC/shared-secret verifier for Smartlead webhooks; required outside local if the route is exposed |
 | `SLACK_WEBHOOK_URL` | `None` | optional Slack webhook for `send_slack_summary()` |
 | `INBOX_SHEET_SCRIPT_URL` | `None` | declared, not currently called |
-| `BLOCKED_PHRASES` | `["guaranteed", "risk-free"]` | substring blocklist enforced in body validation |
+| `BLOCKED_PHRASES` | `["guaranteed", "risk-free"]` | token-boundary blocklist enforced in body validation |
 
-`get_secret_value(env_name)` (same file) returns the value of an OS env var, falling back to a fresh `dotenv_values(".env")` read every call. Used to look up Smartlead workspace API keys whose env-var **name** is stored in the DB.
+`get_secret_value(env_name)` (same file) returns the value of an OS env var, falling back to cached `.env` values. Used to look up Smartlead workspace API keys whose env-var **name** is stored in the DB.
 
 ---
 
@@ -175,7 +175,7 @@ Defined in [app/models/campaign.py](app/models/campaign.py). All tables use `uui
 - The model exists; the `/api/leads/upload` route currently **does not persist** here — it only previews.
 
 #### `webhook_events`
-- All inbound Smartlead webhook payloads, raw. `workspace_id` column exists but is never set by the handler.
+- All inbound Smartlead webhook payloads, raw. `workspace_id` is resolved from `smartlead_campaign_id` via `CampaignRun` when possible.
 
 ### Status state-machines
 
@@ -422,7 +422,7 @@ Smartlead expects HTML in the body field; this is the minimum HTML conversion fo
 ### Auth model
 API key passed as `?api_key=...` query string on every request. The key is fetched per-call via `get_secret_value(workspace.api_key_env_name)` so different workspaces use different keys without storing keys in the DB.
 
-The client sets `User-Agent: Mozilla/5.0 ...` (a browser UA — see review item #7).
+The client sets `User-Agent: Precise-Automator/1.0`.
 
 ### Methods
 
@@ -534,11 +534,12 @@ This lets the same endpoints serve the HTML UI and a programmatic client.
 | # | Step name | Action |
 |---|---|---|
 | 1 | `create_campaign` | `POST /campaigns/create` with name + client_id. Stores the returned id on the run row immediately. |
-| 2 | `apply_settings` | The 3 settings POSTs above. **Note:** the worker calls `apply_v1_settings(campaign_id)` without forwarding `ooo_restart_delay_days`, so it always uses the default 10 (review issue). |
+| 2 | `apply_settings` | The 3 settings POSTs above, forwarding `settings.ooo_restart_delay_days` from the approved draft. |
 | 3 | `apply_schedule` | `POST /campaigns/{id}/schedule` with the plan's schedule dict. |
 | 4 | `push_sequences` | Builds Smartlead seq payload from `plan.sequence`, posts as `{"sequences": [...]}`. |
-| 5 | `create_webhook` (conditional) | Only if `APP_BASE_URL.startswith("https://")`. Subscribes to `EMAIL_REPLY` + `LEAD_CATEGORY_UPDATED` at `/api/webhooks/smartlead`. **Skipped silently** in local dev. |
-| 6 | `verify_campaign` | Fetches the campaign + sequences back from Smartlead and stores in the step's `response_json`. Used as a sanity probe. |
+| 5 | `attach_email_accounts` (conditional) | If `inbox_selection.email_account_ids` is present, attaches those inboxes during the initial sync. |
+| 6 | `create_webhook` (conditional) | Only if `APP_BASE_URL.startswith("https://")`. Subscribes to `EMAIL_REPLY` + `LEAD_CATEGORY_UPDATED` at `/api/webhooks/smartlead`; local skips are recorded as `skipped` run steps. |
+| 7 | `verify_campaign` | Fetches the campaign + sequences back from Smartlead and stores in the step's `response_json`. Used as a sanity probe. |
 
 Each step is wrapped in `_log_step`, which:
 1. Inserts a `CampaignRunStep` row with `status=running`.
@@ -549,15 +550,11 @@ Each step is wrapped in `_log_step`, which:
 The whole run is bracketed:
 - On entry: run row → `running`, `started_at` set.
 - On success: run row → `succeeded`, `finished_at` set.
-- On any exception: run row → `failed`, `error_text = str(exc)`, `finished_at` set, then exception **re-raised** so RQ records the job as failed too.
+- On any exception: run row → `failed`, `error_text` includes status code and response body for Smartlead HTTP failures, `finished_at` set, then exception **re-raised** so RQ records the job as failed too.
 
-### Inboxes are NOT attached during sync
+### Inbox attachment during sync
 
-The worker does not call `attach_email_accounts`. The plan's `inbox_selection.email_account_ids` is ignored at sync time. To attach inboxes:
-
-1. Operator clicks **Apply Latest Draft** on the campaign detail page → calls `/api/campaigns/{id}/smartlead/apply` → that route does call `attach_email_accounts` if ids are present.
-
-This is by design (sync = bare draft) but undocumented in the UI.
+If the approved draft has `inbox_selection.email_account_ids`, the worker attaches those Smartlead inboxes during initial sync. The **Apply Latest Draft** action also applies inboxes, settings, schedule, and sequences to an already-created Smartlead campaign.
 
 ### Why `rq.SimpleWorker` on Windows
 
@@ -593,7 +590,7 @@ This route is currently unused by the rest of the app — it's a building block 
 
 ## 16. Webhook receiver
 
-`POST /api/webhooks/smartlead` ([app/routes/webhooks.py](app/routes/webhooks.py)) accepts any JSON, extracts `campaign_id`/`smartlead_campaign_id` and `event_type`/`type`, and inserts a row into `webhook_events`. **No signature verification.** `SMARTLEAD_WEBHOOK_SECRET` is declared in settings but never read — review issue #1.
+`POST /api/webhooks/smartlead` ([app/routes/webhooks.py](app/routes/webhooks.py)) verifies either `X-Smartlead-Signature` as an HMAC-SHA256 body signature or a shared secret in `?secret=` / `X-Smartlead-Webhook-Secret`. It extracts `campaign_id`/`smartlead_campaign_id` and `event_type`/`type`, resolves the workspace when possible, and inserts a row into `webhook_events`.
 
 The worker's step 5 is the only place this URL is registered with Smartlead, and only when `APP_BASE_URL` is HTTPS.
 

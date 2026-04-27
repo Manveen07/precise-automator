@@ -6,6 +6,10 @@ def build_campaign_plan_from_input(raw_input: dict, note: str | None = None) -> 
     subjects = parsed.get("subjects") or []
     steps = parsed.get("steps") or []
     max_new_leads_per_day = int(raw_input.get("max_new_leads_per_day") or 100)
+    parser_warnings = parsed.get("warnings") or []
+    plan_warnings = []
+    if len(steps) > 4:
+        plan_warnings.append(f"Input had {len(steps)} steps; V1 draft includes only the first 4 steps.")
 
     sequence = []
     for step in steps[:4]:
@@ -20,6 +24,8 @@ def build_campaign_plan_from_input(raw_input: dict, note: str | None = None) -> 
                     "variants": variants,
                 }
             )
+        else:
+            plan_warnings.append(f"Skipped step {step_number} because no body variants were parsed.")
 
     notes = [
         "Draft generated deterministically from the parsed messaging file.",
@@ -29,6 +35,8 @@ def build_campaign_plan_from_input(raw_input: dict, note: str | None = None) -> 
         notes.insert(0, note)
     if parsed.get("selected_campaign"):
         notes.append(f"Selected messaging sequence: {parsed['selected_campaign']}.")
+    notes.extend(parser_warnings)
+    notes.extend(plan_warnings)
 
     return {
         "workspace_key": raw_input["workspace_key"],
