@@ -183,6 +183,16 @@
 <section class="panel">
   <div class="section-heading"><h2>Parsed Messaging</h2></div>
   <p class="section-lead">Raw parser output from the uploaded file or pasted text.</p>
+
+  {% if campaign.raw_input.parsed_messaging.warnings %}
+  <div class="notice warning">
+    <strong>Parser warnings — check your source file:</strong>
+    {% for w in campaign.raw_input.parsed_messaging.warnings %}
+    <p>{{ w }}</p>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   <details>
     <summary>View parser output</summary>
     <pre>{{ campaign.raw_input.parsed_messaging | tojson(indent=2) }}</pre>

@@ -41,6 +41,11 @@ def validate_campaign_plan(plan_data: dict, active_workspace_keys: set[str] | No
             break
 
     for step in plan.sequence:
+        if len(step.variants) == 0:
+            errors.append(
+                f"Step {step.step_number} has no variants — the source file may be missing "
+                f"body text after the Spintax marker for Email {step.step_number}."
+            )
         if len(step.variants) > 20:
             errors.append(f"Step {step.step_number} has too many variants")
         if step.step_number != first_step.step_number:

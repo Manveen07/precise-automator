@@ -36,16 +36,16 @@ def _split_variants(step_text: str) -> list[dict]:
 
 
 def parse_messaging_file(text: str, selected_sequence_name: str | None = None) -> dict:
-    repository_campaigns = _parse_repository_campaigns(text)
+    repository_campaigns, parse_warnings = _parse_repository_campaigns(text)
     if repository_campaigns:
-        selected, warnings = _select_campaign(repository_campaigns, selected_sequence_name)
+        selected, select_warnings = _select_campaign(repository_campaigns, selected_sequence_name)
         return {
             "source_format": "repository",
             "selected_campaign": selected["name"],
             "subjects": selected["subjects"],
             "steps": selected["steps"],
             "campaigns": repository_campaigns,
-            "warnings": warnings,
+            "warnings": parse_warnings + select_warnings,
         }
 
     step_matches = list(STEP_RE.finditer(text))
@@ -75,9 +75,10 @@ def _select_campaign(campaigns: list[dict], selected_sequence_name: str | None) 
     return campaigns[0], []
 
 
-def _parse_repository_campaigns(text: str) -> list[dict]:
+def _parse_repository_campaigns(text: str) -> tuple[list[dict], list[str]]:
     subject_headings = list(SUBJECT_HEADING_RE.finditer(text))
     campaigns: list[dict] = []
+    all_warnings: list[str] = []
     for idx, heading in enumerate(subject_headings):
         section_start = heading.end()
         if idx + 1 < len(subject_headings):
@@ -91,7 +92,8 @@ def _parse_repository_campaigns(text: str) -> list[dict]:
 
         first_email_start = email_matches[0].start()
         subjects = extract_subjects(section[:first_email_start])
-        steps = _parse_email_steps(section, email_matches)
+        steps, warnings = _parse_email_steps(section, email_matches)
+        all_warnings.extend(warnings)
         if subjects and steps:
             campaigns.append(
                 {
@@ -100,18 +102,26 @@ def _parse_repository_campaigns(text: str) -> list[dict]:
                     "steps": steps,
                 }
             )
-    return campaigns
+    return campaigns, all_warnings
 
 
-def _parse_email_steps(section: str, email_matches: list[re.Match]) -> list[dict]:
+def _parse_email_steps(section: str, email_matches: list[re.Match]) -> tuple[list[dict], list[str]]:
     steps: list[dict] = []
+    warnings: list[str] = []
     for idx, match in enumerate(email_matches):
         start = match.end()
         end = email_matches[idx + 1].start() if idx + 1 < len(email_matches) else len(section)
+        step_number = int(match.group(1))
         variants = _split_variants(section[start:end])
         if variants:
-            steps.append({"step_number": int(match.group(1)), "body_variants": variants})
-    return steps
+            steps.append({"step_number": step_number, "body_variants": variants})
+        else:
+            steps.append({"step_number": step_number, "body_variants": []})
+            warnings.append(
+                f"Email {step_number} produced no variants — check that the Spintax marker "
+                f"has body text under it."
+            )
+    return steps, warnings
 
 
 def _heading_name_before(text: str, position: int) -> str | None:
