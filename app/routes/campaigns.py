@@ -8,6 +8,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from redis import Redis
 from rq import Queue
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import get_secret_value, settings
@@ -16,6 +17,7 @@ from app.models import (
     CampaignDraft,
     CampaignRequest,
     CampaignRun,
+    CampaignRunStep,
     CampaignTemplate,
     ConversationSession,
     SmartleadWorkspace,
@@ -31,6 +33,8 @@ from app.workers.sync_campaign import sync_campaign
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
+ACTIVE_RUN_STATUSES = {"queued", "running", "retrying"}
+SYNC_PROTECTED_STATUSES = {"queued", "running", "retrying", "succeeded"}
 
 
 @router.get("/")
@@ -146,6 +150,8 @@ def campaign_detail(campaign_id: uuid.UUID, request: Request, db: Session = Depe
         .first()
     )
     runs = sorted(campaign.runs, key=_run_sort_key, reverse=True)
+    latest_smartlead_run = _latest_smartlead_run(campaign)
+    active_run = _latest_active_run(campaign)
     payload = {
         "id": campaign.id,
         "campaign_name": campaign.raw_input_json.get("campaign_name", "Untitled campaign"),
@@ -154,6 +160,8 @@ def campaign_detail(campaign_id: uuid.UUID, request: Request, db: Session = Depe
         "raw_input": campaign.raw_input_json,
         "latest_draft": latest_draft,
         "latest_run": runs[0] if runs else None,
+        "latest_smartlead_run": latest_smartlead_run,
+        "active_run": active_run,
         "runs": runs,
     }
     return templates.TemplateResponse(request, "campaign_detail.html", {"campaign": payload})
@@ -267,19 +275,108 @@ def enqueue_sync(campaign_id: uuid.UUID, request: Request, db: Session = Depends
     if not draft:
         raise HTTPException(status_code=400, detail="Campaign needs an approved draft before sync")
 
-    run = CampaignRun(
-        request_id=campaign.id,
-        draft_id=draft.id,
-        run_status="queued",
-        idempotency_key=f"{campaign.id}:{draft.id}:{uuid.uuid4()}",
-    )
-    db.add(run)
+    existing_run = _protected_sync_run(campaign, draft.id)
+    if existing_run:
+        _align_campaign_status_for_run(campaign, existing_run)
+        db.commit()
+        return _api_or_campaign_redirect(
+            request,
+            _sync_payload(existing_run, deduped=True),
+            campaign_id,
+        )
+
+    retry_run = _retryable_failed_run(campaign, draft.id)
+    if retry_run:
+        db.query(CampaignRunStep).filter_by(run_id=retry_run.id).delete(synchronize_session=False)
+        retry_run.run_status = "queued"
+        retry_run.error_text = None
+        retry_run.started_at = None
+        retry_run.finished_at = None
+        run = retry_run
+    else:
+        run = CampaignRun(
+            request_id=campaign.id,
+            draft_id=draft.id,
+            run_status="queued",
+            idempotency_key=_sync_idempotency_key(campaign.id, draft.id),
+        )
+        db.add(run)
     campaign.status = "syncing"
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        existing_run = _run_by_idempotency_key(db, _sync_idempotency_key(campaign.id, draft.id))
+        if not existing_run:
+            raise
+        _align_campaign_status_for_run(campaign, existing_run)
+        db.commit()
+        return _api_or_campaign_redirect(request, _sync_payload(existing_run, deduped=True), campaign_id)
 
     queue = Queue("campaign_sync", connection=Redis.from_url(settings.REDIS_URL))
     queue.enqueue(sync_campaign, str(run.id), job_timeout=900)
-    return _api_or_campaign_redirect(request, {"run_id": str(run.id), "status": "queued"}, campaign_id)
+    return _api_or_campaign_redirect(request, _sync_payload(run), campaign_id)
+
+
+def _sync_payload(run: CampaignRun, deduped: bool = False) -> dict:
+    return {
+        "run_id": str(run.id),
+        "status": run.run_status,
+        "smartlead_campaign_id": run.smartlead_campaign_id,
+        "deduped": deduped,
+    }
+
+
+def _sync_idempotency_key(campaign_id: uuid.UUID, draft_id: uuid.UUID) -> str:
+    return f"{campaign_id}:{draft_id}:smartlead_sync"
+
+
+def _run_by_idempotency_key(db: Session, idempotency_key: str) -> CampaignRun | None:
+    return db.query(CampaignRun).filter_by(idempotency_key=idempotency_key).first()
+
+
+def _protected_sync_run(campaign: CampaignRequest, draft_id: uuid.UUID) -> CampaignRun | None:
+    smartlead_run = _latest_smartlead_run(campaign)
+    if smartlead_run:
+        return smartlead_run
+    runs = sorted(campaign.runs, key=_run_sort_key, reverse=True)
+    return next(
+        (
+            run
+            for run in runs
+            if run.draft_id == draft_id and run.run_status in SYNC_PROTECTED_STATUSES
+        ),
+        None,
+    )
+
+
+def _retryable_failed_run(campaign: CampaignRequest, draft_id: uuid.UUID) -> CampaignRun | None:
+    runs = sorted(campaign.runs, key=_run_sort_key, reverse=True)
+    return next(
+        (
+            run
+            for run in runs
+            if run.draft_id == draft_id and run.run_status == "failed" and not run.smartlead_campaign_id
+        ),
+        None,
+    )
+
+
+def _latest_active_run(campaign: CampaignRequest) -> CampaignRun | None:
+    runs = sorted(campaign.runs, key=_run_sort_key, reverse=True)
+    return next((run for run in runs if run.run_status in ACTIVE_RUN_STATUSES), None)
+
+
+def _latest_smartlead_run(campaign: CampaignRequest) -> CampaignRun | None:
+    runs = sorted(campaign.runs, key=_run_sort_key, reverse=True)
+    return next((run for run in runs if run.smartlead_campaign_id), None)
+
+
+def _align_campaign_status_for_run(campaign: CampaignRequest, run: CampaignRun) -> None:
+    if run.run_status in ACTIVE_RUN_STATUSES:
+        campaign.status = "syncing"
+    elif run.run_status == "succeeded":
+        campaign.status = "synced"
 
 
 @router.get("/api/campaigns/{campaign_id}/status")

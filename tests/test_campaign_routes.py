@@ -144,3 +144,48 @@ def test_html_form_posts_redirect_back_to_campaign_page():
 
     assert response.status_code == 303
     assert response.headers["location"] == f"/campaigns/{campaign_id}"
+
+
+def test_sync_idempotency_key_is_stable_for_same_campaign_and_draft():
+    campaign_id = uuid.uuid4()
+    draft_id = uuid.uuid4()
+
+    assert campaigns._sync_idempotency_key(campaign_id, draft_id) == campaigns._sync_idempotency_key(campaign_id, draft_id)
+
+
+def test_protected_sync_run_prefers_existing_smartlead_campaign():
+    draft_id = uuid.uuid4()
+    older = SimpleNamespace(
+        id=uuid.uuid4(),
+        draft_id=draft_id,
+        run_status="succeeded",
+        smartlead_campaign_id=123,
+        started_at=None,
+        finished_at=None,
+    )
+    newer = SimpleNamespace(
+        id=uuid.uuid4(),
+        draft_id=draft_id,
+        run_status="queued",
+        smartlead_campaign_id=None,
+        started_at=None,
+        finished_at=None,
+    )
+    campaign = SimpleNamespace(runs=[newer, older])
+
+    assert campaigns._protected_sync_run(campaign, draft_id) is older
+
+
+def test_retryable_failed_run_can_be_reused_when_no_smartlead_id():
+    draft_id = uuid.uuid4()
+    failed = SimpleNamespace(
+        id=uuid.uuid4(),
+        draft_id=draft_id,
+        run_status="failed",
+        smartlead_campaign_id=None,
+        started_at=None,
+        finished_at=None,
+    )
+    campaign = SimpleNamespace(runs=[failed])
+
+    assert campaigns._retryable_failed_run(campaign, draft_id) is failed

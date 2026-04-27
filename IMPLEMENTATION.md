@@ -159,8 +159,8 @@ Defined in [app/models/campaign.py](app/models/campaign.py). All tables use `uui
 - `latest_draft_id` updated on every event.
 
 #### `campaign_runs`
-- One per **sync attempt** (a queued RQ job).
-- `idempotency_key` — `f"{request_id}:{draft_id}:{uuid4()}"`. Unique constraint, but the random suffix means it doesn't actually de-dupe retries.
+- One per queued RQ job. The app protects one Smartlead campaign per request by reusing existing queued/running/succeeded runs.
+- `idempotency_key` — `f"{request_id}:{draft_id}:smartlead_sync"` for first-time syncs. The unique constraint backs up the route-level duplicate-click guard.
 - `smartlead_campaign_id` — populated after the create-campaign step succeeds.
 - `run_status`: `queued | running | succeeded | failed | retrying`
 - `started_at`, `finished_at`, `error_text`
@@ -350,7 +350,7 @@ Behavior:
 - Default delay days per step: `{1: 1, 2: 3, 3: 4, 4: 5}` (3 if step number falls outside).
 - Schedule defaults: America/New_York, Mon–Fri (1–5), 09:00–18:00, 17-minute spacing, operator-supplied daily cap.
 - Settings defaults: plain text on, tracking off, stop_on_reply on, OOO restart delay = 10 days.
-- `inbox_selection.mode = "skip"` — sync **does not** attach mailboxes; that happens later in the `/smartlead/apply` route.
+- `inbox_selection.mode = "skip"` by default; if `email_account_ids` are present, initial sync attaches them. `/smartlead/apply` can re-apply inboxes later.
 - `notes_for_operator` is seeded with the deterministic-source disclaimer, a "review before sync" note, and the selected sequence name.
 
 The result is then handed to `validate_campaign_plan`. Errors get stored on the draft, status set to `invalid`. No errors → `valid`.
@@ -503,7 +503,7 @@ Tracking is hard-coded off and `stop_on_reply` is hard-coded on. The validator a
 | `/api/campaigns/{id}/generate-draft` | POST | Build draft from parsed input (deterministic) |
 | `/api/campaigns/{id}/revise-draft` | POST | AI revision (form field `revision_instruction`) |
 | `/api/campaigns/{id}/approve` | POST | Mark latest **valid** draft as `approved`, request → `approved` |
-| `/api/campaigns/{id}/sync` | POST | Enqueue an RQ job in `campaign_sync` queue |
+| `/api/campaigns/{id}/sync` | POST | Enqueue an RQ job in `campaign_sync` queue, unless an active/succeeded Smartlead run already exists |
 | `/api/campaigns/{id}/status` | GET | JSON view of last 5 runs + step-level status |
 | `/api/campaigns/{id}/smartlead` | GET | Live `get_campaign` + `get_sequences` from Smartlead |
 | `/api/campaigns/{id}/smartlead` | DELETE (`?mode=archive\|delete`) | Same as the dedicated POSTs below; kept for API clients |
@@ -627,10 +627,10 @@ The JS also auto-fills the campaign name from the filename if blank, stripping t
 Five sections:
 
 1. **Summary grid** — request status, draft status, source (`local_parser` or model id), Smartlead ID.
-2. **Workflow** — 4 numbered steps (parsed → draft → approved → synced) with a `done` class for completed ones, plus action buttons (Generate / Approve / Sync). The Generate button becomes "Regenerate" once a draft exists.
+2. **Next Action** — one primary button at a time: Generate, Approve, Sync, Sync in Progress, or Already Synced.
 3. **Draft preview** — settings summary (cap, hours, timezone, tracking off) and per-step variant tables (label, subject, body in `<pre>` for whitespace fidelity). Validation errors render as a red notice. Raw JSON is collapsed in `<details>`.
 4. **AI Revision** — textarea + button posting to `/revise-draft`. Shown only when a draft exists.
-5. **Smartlead Run** — table of all runs and an action row (Apply / Inspect / Analytics on the left; Archive / Delete pushed right). All Smartlead actions are disabled until `latest_run.smartlead_campaign_id` exists.
+5. **Smartlead** — run table plus collapsed maintenance actions (Apply / Inspect / Analytics / Archive / Delete). Actions are disabled until a Smartlead ID exists.
 6. **Parsed Messaging** — collapsed `<details>` showing the raw parser output JSON.
 
 ### Templating helper
@@ -767,7 +767,8 @@ If valid → operator clicks "Approve Draft"
 
 Operator clicks "Sync to Smartlead"
    ↓ POST /api/campaigns/{id}/sync
-       ├─ INSERT campaign_runs (run_status=queued, idempotency_key=...)
+       ├─ return existing queued/running/succeeded/Smartlead run if one exists
+       ├─ otherwise INSERT campaign_runs (run_status=queued, deterministic idempotency_key)
        ├─ request.status = syncing
        └─ rq.Queue("campaign_sync").enqueue(sync_campaign, run_id, timeout=900)
 
@@ -780,7 +781,7 @@ RQ worker picks up the job:
        Step 4: push_sequences
        Step 5: create_webhook          (only if APP_BASE_URL is HTTPS)
        Step 6: verify_campaign         (read-back probe)
-       run → succeeded, finished_at set
+       run → succeeded, finished_at set, request.status = synced
 
 Operator returns to /campaigns/{id} → sees run row succeeded + Smartlead ID badge
 
