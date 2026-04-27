@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Precise Automator{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1>Campaigns</h1>
+    <p class="muted">Recent requests and their Smartlead sync status.</p>
+  </div>
+  <a class="button" href="/campaigns/new">New Campaign</a>
+</div>
+<section class="panel">
+  {% if campaigns %}
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Request</th>
+        <th>Last Run</th>
+        <th>Smartlead ID</th>
+        <th>Workspace</th>
+        <th>Updated</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for campaign in campaigns %}
+      <tr>
+        <td><a href="/campaigns/{{ campaign.id }}">{{ campaign.name }}</a></td>
+        <td><span class="badge status-{{ campaign.status }}">{{ campaign.status }}</span></td>
+        <td>
+          {% if campaign.run_status %}
+          <span class="badge status-{{ campaign.run_status }}">{{ campaign.run_status }}</span>
+          {% else %}
+          <span class="muted">—</span>
+          {% endif %}
+        </td>
+        <td>{% if campaign.smartlead_id %}{{ campaign.smartlead_id }}{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td>{{ campaign.workspace }}</td>
+        <td class="muted">{{ campaign.updated_at.strftime("%Y-%m-%d %H:%M") }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">
+    <h2>No campaigns yet</h2>
+    <p class="muted">Create your first request to draft a sequence and sync it to Smartlead.</p>
+    <a class="button" href="/campaigns/new">New Campaign</a>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

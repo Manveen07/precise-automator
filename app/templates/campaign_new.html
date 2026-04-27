@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}New Campaign - Precise Automator{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1>New Campaign</h1>
+    <p class="muted">Create a request from an uploaded messaging file or pasted sequence copy.</p>
+  </div>
+  <a class="button secondary" href="/app">Cancel</a>
+</div>
+<form class="panel form-panel" method="post" action="/api/campaigns/new" enctype="multipart/form-data">
+  <div class="grid">
+    <label>Workspace
+      <select name="workspace_key">
+        {% for workspace in workspaces %}
+        <option value="{{ workspace.workspace_key }}">{{ workspace.display_name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Template
+      <select name="template_key">
+        {% for template in templates %}
+        <option value="{{ template.template_key }}">{{ template.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Campaign Name
+      <input id="campaign-name" name="campaign_name" required placeholder="e.g. Q2 Outbound — Series A SaaS">
+    </label>
+    <label>Max New Leads / Day
+      <input name="max_new_leads_per_day" type="number" min="1" max="500" value="100">
+    </label>
+  </div>
+
+  <hr class="divider">
+
+  <div class="upload-row">
+    <label class="file-field">Messaging File <span class="muted">(.txt)</span>
+      <input id="messaging-file" name="messaging_file" type="file" accept=".txt,text/plain">
+    </label>
+    <label>Sequence Name <span class="muted">(optional)</span>
+      <input name="selected_sequence_name" placeholder="Benchmark">
+    </label>
+  </div>
+
+  <label>Or Paste Messaging
+    <textarea id="messaging-text" name="messaging_text" rows="16" placeholder="Subject Line Options:
+1. Quick Benchmark
+
+Email 1
+...
+
+--- SPINTAX VERSION ---
+..."></textarea>
+  </label>
+
+  <div class="form-actions">
+    <button type="submit">Create Request</button>
+    <a class="button secondary" href="/app">Cancel</a>
+  </div>
+</form>
+<script src="/static/campaign_new.js"></script>
+{% endblock %}

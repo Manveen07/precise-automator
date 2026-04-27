@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% block title %}{{ campaign.campaign_name }} - Precise Automator{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1>{{ campaign.campaign_name }}</h1>
+    <p class="muted">Workspace {{ campaign.workspace_key }}{% if campaign.raw_input.parsed_messaging.selected_campaign %} · {{ campaign.raw_input.parsed_messaging.selected_campaign }}{% endif %}</p>
+  </div>
+  <a class="button secondary" href="/app">Back to Dashboard</a>
+</div>
+
+<section class="panel">
+  <div class="summary-grid">
+    <div>
+      <span class="eyebrow">Request</span>
+      <strong class="summary-value"><span class="badge status-{{ campaign.status }}">{{ campaign.status }}</span></strong>
+    </div>
+    <div>
+      <span class="eyebrow">Draft</span>
+      <strong class="summary-value">
+        {% if campaign.latest_draft %}
+        <span class="badge status-{{ campaign.latest_draft.validation_status }}">{{ campaign.latest_draft.validation_status }}</span>
+        {% else %}<span class="muted">none</span>{% endif %}
+      </strong>
+    </div>
+    <div>
+      <span class="eyebrow">Source</span>
+      <strong class="summary-value">{% if campaign.latest_draft %}{{ campaign.latest_draft.model_name }}{% else %}<span class="muted">not generated</span>{% endif %}</strong>
+    </div>
+    <div>
+      <span class="eyebrow">Smartlead</span>
+      <strong class="summary-value">{% if campaign.latest_run and campaign.latest_run.smartlead_campaign_id %}ID {{ campaign.latest_run.smartlead_campaign_id }}{% else %}<span class="muted">not synced</span>{% endif %}</strong>
+    </div>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="section-heading"><h2>Workflow</h2></div>
+  <p class="section-lead">Move the request through draft, approval, and Smartlead sync. Each action enables the next.</p>
+  <div class="workflow-list">
+    <div class="workflow-item done"><span>1</span><p>Messaging parsed from upload or paste.</p></div>
+    <div class="workflow-item {% if campaign.latest_draft %}done{% endif %}"><span>2</span><p>Draft generated and validated.</p></div>
+    <div class="workflow-item {% if campaign.latest_draft and campaign.latest_draft.validation_status == "approved" %}done{% endif %}"><span>3</span><p>Draft approved for Smartlead sync.</p></div>
+    <div class="workflow-item {% if campaign.latest_run and campaign.latest_run.smartlead_campaign_id %}done{% endif %}"><span>4</span><p>Smartlead draft created and configured.</p></div>
+  </div>
+  <div class="action-row">
+    <form method="post" action="/api/campaigns/{{ campaign.id }}/generate-draft">
+      <button type="submit" class="{% if campaign.latest_draft %}secondary{% endif %}">{% if campaign.latest_draft %}Regenerate Draft{% else %}Generate Draft{% endif %}</button>
+    </form>
+    <form method="post" action="/api/campaigns/{{ campaign.id }}/approve">
+      <button type="submit" class="{% if not campaign.latest_draft or campaign.latest_draft.validation_status != "valid" %}secondary{% endif %}" {% if not campaign.latest_draft or campaign.latest_draft.validation_status != "valid" %}disabled{% endif %}>Approve Draft</button>
+    </form>
+    <form method="post" action="/api/campaigns/{{ campaign.id }}/sync">
+      <button type="submit" {% if not campaign.latest_draft or campaign.latest_draft.validation_status != "approved" %}disabled{% endif %}>Sync to Smartlead</button>
+    </form>
+  </div>
+</section>
+
+{% if campaign.latest_draft %}
+<section class="panel">
+  <div class="section-heading">
+    <h2>Draft Preview</h2>
+    <span class="badge status-{{ campaign.latest_draft.validation_status }}">{{ campaign.latest_draft.validation_status }}</span>
+  </div>
+  <p class="section-lead">Review the generated sequence before approving. Variants and delays mirror what will be pushed to Smartlead.</p>
+  {% if campaign.latest_draft.validation_errors_json %}
+  <div class="notice error">
+    {% for error in campaign.latest_draft.validation_errors_json %}
+    <p>{{ error }}</p>
+    {% endfor %}
+  </div>
+  {% endif %}
+  <div class="summary-grid compact">
+    <div><span class="eyebrow">Daily Cap</span><strong class="summary-value">{{ campaign.latest_draft.draft_json.schedule.max_new_leads_per_day }}</strong></div>
+    <div><span class="eyebrow">Send Hours</span><strong class="summary-value">{{ campaign.latest_draft.draft_json.schedule.start_hour }}–{{ campaign.latest_draft.draft_json.schedule.end_hour }}</strong></div>
+    <div><span class="eyebrow">Timezone</span><strong class="summary-value">{{ campaign.latest_draft.draft_json.schedule.timezone }}</strong></div>
+    <div><span class="eyebrow">Tracking</span><strong class="summary-value">opens off · clicks off</strong></div>
+  </div>
+  <div class="sequence-list">
+    {% for step in campaign.latest_draft.draft_json.sequence %}
+    <article class="sequence-step">
+      <header>
+        <h3>Email {{ step.step_number }}</h3>
+        <span class="muted">Delay {{ step.delay_days }} day{% if step.delay_days != 1 %}s{% endif %}</span>
+      </header>
+      <table>
+        <thead>
+          <tr>
+            <th>Variant</th>
+            <th>Subject</th>
+            <th>Body</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for variant in step.variants %}
+          <tr>
+            <td>{{ variant.variant_label }}</td>
+            <td>{{ variant.subject or "Follow-up thread" }}</td>
+            <td><pre class="copy-preview">{{ variant.body }}</pre></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </article>
+    {% endfor %}
+  </div>
+  <details>
+    <summary>Raw draft JSON</summary>
+    <pre>{{ campaign.latest_draft.draft_json | tojson(indent=2) }}</pre>
+  </details>
+</section>
+
+<section class="panel">
+  <div class="section-heading"><h2>AI Revision</h2></div>
+  <p class="section-lead">Optional. Request a targeted change in plain English. The deterministic draft is preserved if revision fails.</p>
+  <form method="post" action="/api/campaigns/{{ campaign.id }}/revise-draft" class="inline-form">
+    <label>Instruction
+      <textarea name="revision_instruction" rows="3" placeholder="Example: make Email 2 shorter, keep all merge tags intact."></textarea>
+    </label>
+    <div><button type="submit">Revise with Claude</button></div>
+  </form>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="section-heading">
+    <h2>Smartlead Run</h2>
+    {% if campaign.latest_run and campaign.latest_run.smartlead_campaign_id %}
+    <span class="badge">ID {{ campaign.latest_run.smartlead_campaign_id }}</span>
+    {% endif %}
+  </div>
+  <p class="section-lead">Most recent sync run and direct Smartlead actions for this campaign.</p>
+  {% if campaign.runs %}
+  <table>
+    <thead>
+      <tr>
+        <th>Status</th>
+        <th>Smartlead ID</th>
+        <th>Error</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for run in campaign.runs %}
+      <tr>
+        <td><span class="badge status-{{ run.run_status }}">{{ run.run_status }}</span></td>
+        <td>{{ run.smartlead_campaign_id or "—" }}</td>
+        <td>{% if run.error_text %}<span class="muted">{{ run.error_text }}</span>{% else %}—{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <hr class="divider">
+  <div class="action-row">
+    <form method="post" action="/api/campaigns/{{ campaign.id }}/smartlead/apply">
+      <button type="submit" {% if not campaign.latest_run or not campaign.latest_run.smartlead_campaign_id %}disabled{% endif %}>Apply Latest Draft</button>
+    </form>
+    <a class="button secondary" href="/api/campaigns/{{ campaign.id }}/smartlead">Inspect</a>
+    <a class="button secondary" href="/api/campaigns/{{ campaign.id }}/analytics">Analytics</a>
+    <span class="spacer"></span>
+    <form method="post" action="/api/campaigns/{{ campaign.id }}/smartlead/archive">
+      <button type="submit" class="secondary" {% if not campaign.latest_run or not campaign.latest_run.smartlead_campaign_id %}disabled{% endif %}>Archive</button>
+    </form>
+    <form method="post" action="/api/campaigns/{{ campaign.id }}/smartlead/delete" onsubmit="return confirm('Permanently delete this Smartlead campaign and associated data?');">
+      <button type="submit" class="danger" {% if not campaign.latest_run or not campaign.latest_run.smartlead_campaign_id %}disabled{% endif %}>Delete</button>
+    </form>
+  </div>
+  {% else %}
+  <p class="muted">No Smartlead sync run yet. Approve a draft and click <strong>Sync to Smartlead</strong> above.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="section-heading"><h2>Parsed Messaging</h2></div>
+  <p class="section-lead">Raw parser output from the uploaded file or pasted text.</p>
+  <details>
+    <summary>View parser output</summary>
+    <pre>{{ campaign.raw_input.parsed_messaging | tojson(indent=2) }}</pre>
+  </details>
+</section>
+{% endblock %}
