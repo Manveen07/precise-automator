@@ -95,7 +95,7 @@
           {% for variant in step.variants %}
           <tr>
             <td>{{ variant.variant_label }}</td>
-            <td>{{ variant.subject or "Follow-up thread" }}</td>
+            <td>{% if variant.subject %}{{ variant.subject }}{% else %}<span class="muted">empty - same thread</span>{% endif %}</td>
             <td><pre class="copy-preview">{{ variant.body }}</pre></td>
           </tr>
           {% endfor %}
