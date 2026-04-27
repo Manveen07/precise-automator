@@ -39,10 +39,10 @@ alembic upgrade head
 ## Worker
 
 ```powershell
-rq worker campaign_sync --url redis://localhost:6379/0 --worker-class rq.SimpleWorker
+.\scripts\run_worker.ps1
 ```
 
-Use `rq.SimpleWorker` on Windows because the default RQ worker depends on `os.fork()`, which is Unix-only.
+Use the script on Windows. It runs a `SimpleWorker` subclass with RQ's timer-based timeout handler, avoiding both Unix-only `os.fork()` and `SIGALRM`.
 
 ## Database Changes
 

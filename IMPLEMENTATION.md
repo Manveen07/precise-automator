@@ -75,7 +75,7 @@ precise-automator/
 ├── migrations/                      Alembic
 ├── scripts/
 │   ├── bootstrap.ps1                first-run setup (Windows)
-│   └── run_worker.ps1               start RQ worker with SimpleWorker class
+│   └── run_worker.ps1               start Windows-compatible RQ worker
 ├── tests/                           pytest, mock-DB style
 ├── docker-compose.yml               postgres:55432, redis:6379
 ├── Dockerfile
@@ -556,9 +556,9 @@ The whole run is bracketed:
 
 If the approved draft has `inbox_selection.email_account_ids`, the worker attaches those Smartlead inboxes during initial sync. The **Apply Latest Draft** action also applies inboxes, settings, schedule, and sequences to an already-created Smartlead campaign.
 
-### Why `rq.SimpleWorker` on Windows
+### Why a custom SimpleWorker on Windows
 
-The default RQ `Worker` forks a child for each job (`os.fork()`), which doesn't exist on Windows. `SimpleWorker` runs the job in-process. The provided `scripts/run_worker.ps1` uses the SimpleWorker variant.
+The default RQ `Worker` forks a child for each job (`os.fork()`), which doesn't exist on Windows. `SimpleWorker` runs the job in-process, but RQ's default timeout handler still uses Unix-only `SIGALRM`. The provided `scripts/run_worker.ps1` uses `app.workers.rq_windows.WindowsSimpleWorker`, a `SimpleWorker` subclass that swaps in RQ's `TimerDeathPenalty`.
 
 ---
 
@@ -692,7 +692,7 @@ In a second terminal, the worker:
 ```powershell
 .\scripts\run_worker.ps1
 # or:
-rq worker campaign_sync --url redis://localhost:6379/0 --worker-class rq.SimpleWorker
+rq worker campaign_sync --url redis://localhost:6379/0 --worker-class app.workers.rq_windows.WindowsSimpleWorker
 ```
 
 Smartlead webhook registration is skipped in local because `APP_BASE_URL` is `http://`, so reply tracking only kicks in once deployed with HTTPS.
@@ -705,7 +705,7 @@ Smartlead webhook registration is skipped in local because `APP_BASE_URL` is `ht
 
 [railway.json](railway.json): Dockerfile builder, restart on failure up to 10 times.
 
-The worker is not in the Dockerfile CMD — Railway needs a separate service running `rq worker campaign_sync --url $REDIS_URL --worker-class rq.SimpleWorker` (or the default `Worker` class on Linux).
+The worker is not in the Dockerfile CMD — Railway needs a separate service running `rq worker campaign_sync --url $REDIS_URL` on Linux, or the Windows-compatible class when running on Windows.
 
 Required env vars in production:
 - `DATABASE_URL`, `REDIS_URL` (provided by Railway add-ons)

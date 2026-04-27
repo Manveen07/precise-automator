@@ -1,6 +1,8 @@
 import httpx
 import pytest
+from rq.timeouts import TimerDeathPenalty
 
+from app.workers.rq_windows import WindowsSimpleWorker
 from app.workers.sync_campaign import _error_text, _extract_campaign_id
 
 
@@ -27,3 +29,7 @@ def test_http_status_error_text_keeps_status_and_response_body():
 
     assert "HTTP 500" in text
     assert "temporary failure" in text
+
+
+def test_windows_worker_uses_timer_timeout_handler():
+    assert WindowsSimpleWorker.death_penalty_class is TimerDeathPenalty
