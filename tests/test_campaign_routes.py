@@ -173,7 +173,23 @@ def test_protected_sync_run_prefers_existing_smartlead_campaign():
     )
     campaign = SimpleNamespace(runs=[newer, older])
 
-    assert campaigns._protected_sync_run(campaign, draft_id) is older
+    assert campaigns._protected_sync_run(campaign) is older
+
+
+def test_protected_sync_run_blocks_in_flight_run_regardless_of_draft_id():
+    """A second sync click while the first run is still queued/running must be blocked
+    even if the latest draft has a different id (e.g. operator regenerated mid-sync)."""
+    in_flight = SimpleNamespace(
+        id=uuid.uuid4(),
+        draft_id=uuid.uuid4(),
+        run_status="running",
+        smartlead_campaign_id=None,
+        started_at=None,
+        finished_at=None,
+    )
+    campaign = SimpleNamespace(runs=[in_flight])
+
+    assert campaigns._protected_sync_run(campaign) is in_flight
 
 
 def test_retryable_failed_run_can_be_reused_when_no_smartlead_id():

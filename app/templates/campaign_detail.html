@@ -36,26 +36,22 @@
 
 <section class="panel">
   <div class="section-heading"><h2>Next Action</h2></div>
-  <p class="section-lead">Use the single primary action below. Sync is idempotent: repeat clicks reuse the existing run or Smartlead campaign.</p>
+  <p class="section-lead">One click pushes the draft to Smartlead. The button disables itself on submit; repeated clicks are also deduped server-side.</p>
   <div class="action-row">
     {% if not campaign.latest_draft %}
-    <form method="post" action="/api/campaigns/{{ campaign.id }}/generate-draft">
+    <form method="post" action="/api/campaigns/{{ campaign.id }}/generate-draft" class="js-single-submit">
       <button type="submit">Generate Draft</button>
     </form>
-    {% elif campaign.latest_draft.validation_status == "valid" %}
-    <form method="post" action="/api/campaigns/{{ campaign.id }}/approve">
-      <button type="submit">Approve Draft</button>
-    </form>
-    {% elif campaign.latest_draft.validation_status == "approved" and campaign.active_run %}
+    {% elif campaign.active_run %}
     <button type="button" disabled>Sync in Progress</button>
-    {% elif campaign.latest_draft.validation_status == "approved" and campaign.latest_smartlead_run %}
+    {% elif campaign.latest_smartlead_run %}
     <button type="button" disabled>Already Synced</button>
-    {% elif campaign.latest_draft.validation_status == "approved" %}
-    <form method="post" action="/api/campaigns/{{ campaign.id }}/sync">
-      <button type="submit">Sync to Smartlead</button>
+    {% elif campaign.latest_draft.validation_status in ["valid", "approved"] %}
+    <form method="post" action="/api/campaigns/{{ campaign.id }}/approve-and-sync" class="js-single-submit">
+      <button type="submit">Approve &amp; Sync to Smartlead</button>
     </form>
     {% else %}
-    <form method="post" action="/api/campaigns/{{ campaign.id }}/generate-draft">
+    <form method="post" action="/api/campaigns/{{ campaign.id }}/generate-draft" class="js-single-submit">
       <button type="submit">Regenerate Draft</button>
     </form>
     {% endif %}
@@ -68,7 +64,7 @@
     <h2>Draft Preview</h2>
     <span class="badge status-{{ campaign.latest_draft.validation_status }}">{{ campaign.latest_draft.validation_status }}</span>
   </div>
-  <p class="section-lead">Review the generated sequence before approving. Variants and delays mirror what will be pushed to Smartlead.</p>
+  <p class="section-lead">This is what will be pushed to Smartlead. Variants and delays mirror the final campaign exactly.</p>
   {% if campaign.latest_draft.validation_errors_json %}
   <div class="notice error">
     {% for error in campaign.latest_draft.validation_errors_json %}
@@ -176,7 +172,7 @@
     </div>
   </details>
   {% else %}
-  <p class="muted">No Smartlead sync run yet. Approve a draft and click <strong>Sync to Smartlead</strong> above.</p>
+  <p class="muted">No Smartlead sync run yet. Click <strong>Approve &amp; Sync to Smartlead</strong> above.</p>
   {% endif %}
 </section>
 

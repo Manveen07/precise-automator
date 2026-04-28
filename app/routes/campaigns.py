@@ -28,6 +28,7 @@ from app.services.local_plan_service import build_campaign_plan_from_input
 from app.services.parser_service import parse_messaging_file
 from app.services.sequence_builder import build_smartlead_sequences
 from app.services.smartlead_service import SmartleadService
+from app.services.spintax_service import apply_spintax_to_plan, count_bodies_needing_spintax
 from app.services.validation_service import validate_campaign_plan
 from app.workers.sync_campaign import sync_campaign
 
@@ -120,7 +121,13 @@ async def create_campaign_request(
         status="drafting",
     )
     db.add(campaign)
-    db.commit()
+    db.flush()
+
+    plan = build_campaign_plan_from_input(
+        raw_input,
+        note="Draft generated deterministically from parsed messaging on submit.",
+    )
+    _store_draft(db, campaign, plan, "local_parser")
     return RedirectResponse(f"/campaigns/{campaign.id}", status_code=303)
 
 
@@ -152,6 +159,10 @@ def campaign_detail(campaign_id: uuid.UUID, request: Request, db: Session = Depe
     runs = sorted(campaign.runs, key=_run_sort_key, reverse=True)
     latest_smartlead_run = _latest_smartlead_run(campaign)
     active_run = _latest_active_run(campaign)
+    spintax_status = None
+    if latest_draft:
+        need, total = count_bodies_needing_spintax(latest_draft.draft_json or {})
+        spintax_status = {"need": need, "total": total, "all_have_spintax": total > 0 and need == 0}
     payload = {
         "id": campaign.id,
         "campaign_name": campaign.raw_input_json.get("campaign_name", "Untitled campaign"),
@@ -163,6 +174,7 @@ def campaign_detail(campaign_id: uuid.UUID, request: Request, db: Session = Depe
         "latest_smartlead_run": latest_smartlead_run,
         "active_run": active_run,
         "runs": runs,
+        "spintax_status": spintax_status,
     }
     return templates.TemplateResponse(request, "campaign_detail.html", {"campaign": payload})
 
@@ -242,6 +254,61 @@ def revise_draft(
     )
 
 
+@router.post("/api/campaigns/{campaign_id}/spintax")
+def generate_spintax(campaign_id: uuid.UUID, request: Request, db: Session = Depends(get_db)):
+    campaign = db.get(CampaignRequest, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    latest_draft = _latest_draft(db, campaign.id)
+    if not latest_draft:
+        raise HTTPException(status_code=400, detail="Generate a draft before adding spintax")
+
+    if not _has_configured_anthropic_key():
+        message = "Anthropic API key is not configured; cannot generate spintax."
+        _record_ai_revision_error(db, campaign, latest_draft.id, "spintax_generation", message)
+        return _api_or_campaign_redirect(
+            request,
+            {"ok": False, "draft_id": str(latest_draft.id), "errors": [message]},
+            campaign_id,
+        )
+
+    from anthropic import Anthropic, AnthropicError as _AnthropicError
+
+    try:
+        client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+        new_plan, stats = apply_spintax_to_plan(latest_draft.draft_json, client)
+    except _AnthropicError as exc:
+        message = f"Spintax generation failed: {exc.__class__.__name__}; previous draft preserved."
+        _record_ai_revision_error(db, campaign, latest_draft.id, "spintax_generation", message)
+        return _api_or_campaign_redirect(
+            request,
+            {"ok": False, "draft_id": str(latest_draft.id), "errors": [message]},
+            campaign_id,
+        )
+
+    if stats["generated"] == 0:
+        return _api_or_campaign_redirect(
+            request,
+            {"ok": True, "draft_id": str(latest_draft.id), "stats": stats, "note": "All bodies already had spintax."},
+            campaign_id,
+        )
+
+    draft, errors = _store_draft(db, campaign, new_plan, settings.ANTHROPIC_MODEL, commit=False)
+    latest_draft.validation_status = "superseded"
+    _upsert_conversation_session(
+        db,
+        campaign.id,
+        draft.id,
+        [{"role": "assistant", "event": "spintax_generated", "draft_id": str(draft.id), "stats": stats}],
+    )
+    db.commit()
+    return _api_or_campaign_redirect(
+        request,
+        {"ok": True, "draft_id": str(draft.id), "stats": stats, "errors": errors},
+        campaign_id,
+    )
+
+
 @router.post("/api/campaigns/{campaign_id}/approve")
 def approve_campaign(campaign_id: uuid.UUID, request: Request, db: Session = Depends(get_db)):
     campaign = db.get(CampaignRequest, campaign_id)
@@ -261,6 +328,26 @@ def approve_campaign(campaign_id: uuid.UUID, request: Request, db: Session = Dep
     return _api_or_campaign_redirect(request, {"ok": True, "draft_id": str(draft.id)}, campaign_id)
 
 
+@router.post("/api/campaigns/{campaign_id}/approve-and-sync")
+def approve_and_sync(campaign_id: uuid.UUID, request: Request, db: Session = Depends(get_db)):
+    campaign = db.get(CampaignRequest, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    draft = (
+        db.query(CampaignDraft)
+        .filter_by(request_id=campaign.id)
+        .order_by(CampaignDraft.created_at.desc())
+        .first()
+    )
+    if not draft or draft.validation_status not in {"valid", "approved"}:
+        raise HTTPException(status_code=400, detail="Latest draft must be valid before sync")
+    if draft.validation_status == "valid":
+        draft.validation_status = "approved"
+        campaign.status = "approved"
+        db.commit()
+    return enqueue_sync(campaign_id, request, db)
+
+
 @router.post("/api/campaigns/{campaign_id}/sync")
 def enqueue_sync(campaign_id: uuid.UUID, request: Request, db: Session = Depends(get_db)):
     campaign = db.get(CampaignRequest, campaign_id)
@@ -275,13 +362,23 @@ def enqueue_sync(campaign_id: uuid.UUID, request: Request, db: Session = Depends
     if not draft:
         raise HTTPException(status_code=400, detail="Campaign needs an approved draft before sync")
 
-    existing_run = _protected_sync_run(campaign, draft.id)
+    existing_run = _protected_sync_run(campaign)
     if existing_run:
         _align_campaign_status_for_run(campaign, existing_run)
         db.commit()
         return _api_or_campaign_redirect(
             request,
             _sync_payload(existing_run, deduped=True),
+            campaign_id,
+        )
+
+    cross_request_run = _cross_request_smartlead_run(db, campaign, draft)
+    if cross_request_run:
+        campaign.status = "synced"
+        db.commit()
+        return _api_or_campaign_redirect(
+            request,
+            _sync_payload(cross_request_run, deduped=True),
             campaign_id,
         )
 
@@ -335,19 +432,49 @@ def _run_by_idempotency_key(db: Session, idempotency_key: str) -> CampaignRun | 
     return db.query(CampaignRun).filter_by(idempotency_key=idempotency_key).first()
 
 
-def _protected_sync_run(campaign: CampaignRequest, draft_id: uuid.UUID) -> CampaignRun | None:
+def _protected_sync_run(campaign: CampaignRequest) -> CampaignRun | None:
+    """Block any second sync for this campaign request while *any* prior run is queued, running,
+    retrying, succeeded, or has produced a Smartlead campaign id. The previous code only blocked
+    in-flight runs whose draft_id matched the new sync — meaning a regenerated/revised draft could
+    bypass the in-flight check and create a second Smartlead campaign before the first finished."""
     smartlead_run = _latest_smartlead_run(campaign)
     if smartlead_run:
         return smartlead_run
     runs = sorted(campaign.runs, key=_run_sort_key, reverse=True)
     return next(
-        (
-            run
-            for run in runs
-            if run.draft_id == draft_id and run.run_status in SYNC_PROTECTED_STATUSES
-        ),
+        (run for run in runs if run.run_status in SYNC_PROTECTED_STATUSES),
         None,
     )
+
+
+def _cross_request_smartlead_run(
+    db: Session, campaign: CampaignRequest, draft: CampaignDraft
+) -> CampaignRun | None:
+    """Block a duplicate Smartlead campaign creation when the same workspace already has a synced
+    run for an identically-named campaign on a *different* CampaignRequest. Without this, an operator
+    who re-uploads the same file (creating a fresh request row) bypasses the per-request dedupe
+    and produces a second draft in Smartlead."""
+    target_name = (draft.draft_json or {}).get("campaign_name", "").strip()
+    if not target_name:
+        return None
+    candidate_runs = (
+        db.query(CampaignRun)
+        .join(CampaignRequest, CampaignRun.request_id == CampaignRequest.id)
+        .filter(
+            CampaignRequest.workspace_id == campaign.workspace_id,
+            CampaignRequest.id != campaign.id,
+            CampaignRun.smartlead_campaign_id.isnot(None),
+        )
+        .all()
+    )
+    for run in candidate_runs:
+        run_draft = db.get(CampaignDraft, run.draft_id)
+        if not run_draft:
+            continue
+        run_name = (run_draft.draft_json or {}).get("campaign_name", "").strip()
+        if run_name == target_name:
+            return run
+    return None
 
 
 def _retryable_failed_run(campaign: CampaignRequest, draft_id: uuid.UUID) -> CampaignRun | None:

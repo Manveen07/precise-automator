@@ -16,5 +16,16 @@
     <main class="shell">
       {% block content %}{% endblock %}
     </main>
+    <script>
+      document.addEventListener("submit", (event) => {
+        const form = event.target;
+        if (!(form instanceof HTMLFormElement) || !form.classList.contains("js-single-submit")) return;
+        const button = form.querySelector("button[type=submit], button:not([type])");
+        if (!button) return;
+        button.disabled = true;
+        button.dataset.originalText = button.textContent;
+        button.textContent = "Working…";
+      });
+    </script>
   </body>
 </html>
