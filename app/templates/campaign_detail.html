@@ -62,9 +62,43 @@
 <section class="panel">
   <div class="section-heading">
     <h2>Draft Preview</h2>
-    <span class="badge status-{{ campaign.latest_draft.validation_status }}">{{ campaign.latest_draft.validation_status }}</span>
+    <div class="header-actions">
+      <span class="badge status-{{ campaign.latest_draft.validation_status }}">{{ campaign.latest_draft.validation_status }}</span>
+      {% if campaign.spintax_status %}
+      <button type="button" class="button secondary" onclick="document.getElementById('spintax-dialog').showModal()">
+        {% if campaign.spintax_status.all_have_spintax %}Re-check Spintax{% else %}Enable Spintax ({{ campaign.spintax_status.need }} of {{ campaign.spintax_status.total }}){% endif %}
+      </button>
+      {% endif %}
+    </div>
   </div>
   <p class="section-lead">This is what will be pushed to Smartlead. Variants and delays mirror the final campaign exactly.</p>
+
+  {% if campaign.spintax_status %}
+  <dialog id="spintax-dialog" class="modal">
+    <form method="dialog" class="modal-close-form">
+      <button type="submit" aria-label="Close" class="modal-close">&times;</button>
+    </form>
+    <h3>Enable Spintax</h3>
+    {% if campaign.spintax_status.all_have_spintax %}
+    <p>All {{ campaign.spintax_status.total }} email bodies already contain spintax. Nothing to generate.</p>
+    <div class="modal-actions">
+      <button type="button" class="button secondary" onclick="document.getElementById('spintax-dialog').close()">Close</button>
+    </div>
+    {% else %}
+    <p>
+      <strong>{{ campaign.spintax_status.need }}</strong> of {{ campaign.spintax_status.total }} email bodies do not contain spintax.
+      Click below to generate spintax for those bodies using Claude. Bodies that already have spintax will be left untouched.
+    </p>
+    <p class="muted">This sends each body through Claude with a strict spintax-generation prompt. May take ~5–10 seconds per unique body.</p>
+    <div class="modal-actions">
+      <form method="post" action="/api/campaigns/{{ campaign.id }}/spintax" class="js-single-submit">
+        <button type="submit">Generate Spintax with Claude</button>
+      </form>
+      <button type="button" class="button secondary" onclick="document.getElementById('spintax-dialog').close()">Cancel</button>
+    </div>
+    {% endif %}
+  </dialog>
+  {% endif %}
   {% if campaign.latest_draft.validation_errors_json %}
   <div class="notice error">
     {% for error in campaign.latest_draft.validation_errors_json %}

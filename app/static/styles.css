@@ -423,6 +423,63 @@ th {
 
 .muted { color: var(--muted); font-size: 13.5px; }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.modal {
+  border: none;
+  border-radius: 12px;
+  padding: 24px 28px;
+  max-width: 520px;
+  width: calc(100% - 32px);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18);
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--paper);
+}
+
+.modal::backdrop {
+  background: rgba(20, 20, 20, 0.45);
+}
+
+.modal h3 {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+
+.modal p {
+  margin: 0 0 12px;
+  line-height: 1.5;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 18px;
+}
+
+.modal-close-form {
+  display: flex;
+  justify-content: flex-end;
+  margin: -12px -12px 0 0;
+}
+
+.modal-close {
+  background: transparent;
+  border: none;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 4px 8px;
+}
+
+.modal-close:hover { color: var(--ink); }
+
 details { margin-top: 16px; }
 
 summary {
