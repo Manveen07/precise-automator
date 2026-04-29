@@ -62,13 +62,38 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
                 "id": campaign.id,
                 "name": campaign.raw_input_json.get("campaign_name", "Untitled campaign"),
                 "status": campaign.status,
+                "status_label": _campaign_status_label(campaign.status),
                 "workspace": campaign.workspace.display_name,
                 "updated_at": campaign.updated_at,
                 "smartlead_id": smartlead_id,
                 "run_status": latest_run.run_status if latest_run else None,
+                "run_status_label": _run_status_label(latest_run.run_status) if latest_run else None,
+                "smartlead_state": "Drafted in Smartlead" if smartlead_id else "Not drafted",
             }
         )
     return templates.TemplateResponse(request, "dashboard.html", {"campaigns": rows})
+
+
+def _campaign_status_label(status: str) -> str:
+    return {
+        "drafting": "Drafting",
+        "needs_revision": "Needs revision",
+        "approved": "Ready to sync",
+        "syncing": "Syncing",
+        "synced": "Smartlead draft created",
+        "failed": "Failed",
+        "archived": "Archived",
+    }.get(status, status.replace("_", " ").title())
+
+
+def _run_status_label(status: str) -> str:
+    return {
+        "queued": "Queued",
+        "running": "Running",
+        "retrying": "Retrying",
+        "succeeded": "Succeeded",
+        "failed": "Failed",
+    }.get(status, status.replace("_", " ").title())
 
 
 @router.get("/campaigns/new")

@@ -2,7 +2,10 @@ import uuid
 from json import JSONDecodeError
 from types import SimpleNamespace
 
+from fastapi.testclient import TestClient
+
 from app.models import CampaignDraft, CampaignRequest, ConversationSession, SmartleadWorkspace
+from app.main import app
 from app.routes import campaigns
 
 
@@ -205,3 +208,19 @@ def test_retryable_failed_run_can_be_reused_when_no_smartlead_id():
     campaign = SimpleNamespace(runs=[failed])
 
     assert campaigns._retryable_failed_run(campaign, draft_id) is failed
+
+
+def test_dashboard_status_labels_are_operator_friendly():
+    assert campaigns._campaign_status_label("synced") == "Smartlead draft created"
+    assert campaigns._campaign_status_label("approved") == "Ready to sync"
+    assert campaigns._run_status_label("succeeded") == "Succeeded"
+
+
+def test_dashboard_renders_friendly_smartlead_draft_label():
+    client = TestClient(app)
+    response = client.get("/app")
+
+    assert response.status_code == 200
+    if "test local mcp" in response.text:
+        assert "Drafted in Smartlead" in response.text
+        assert "Smartlead draft created" in response.text
