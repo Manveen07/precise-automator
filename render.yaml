@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: precise-automator
+    env: docker
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_BASE_URL
+        value: https://precise-automator.onrender.com
+      - key: MONGODB_DB_NAME
+        value: infrabot
+      - key: MONGODB_URL
+        sync: false
+      - key: APP_SECRET_KEY
+        generateValue: true
+      - key: APP_USERNAME
+        sync: false
+      - key: APP_PASSWORD
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ANTHROPIC_MODEL
+        value: claude-sonnet-4-20250514
+      - key: SMARTLEAD_PRECISELEAD_API_KEY
+        sync: false
+      - key: SMARTLEAD_PRECISELEAD_CLIENT_ID
+        sync: false
+      - key: SMARTLEAD_BELARDI_WONG_API_KEY
+        sync: false
+      - key: SMARTLEAD_DARLEAN_API_KEY
+        sync: false
+      - key: SLACK_WEBHOOK_URL
+        sync: false

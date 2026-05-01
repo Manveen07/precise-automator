@@ -15,6 +15,13 @@ from app import store
 
 @pytest.fixture
 def client():
+    client = TestClient(app, follow_redirects=False)
+    client.auth = ("test-user", "test-password")
+    return client
+
+
+@pytest.fixture
+def anonymous_client():
     return TestClient(app, follow_redirects=False)
 
 
@@ -25,6 +32,23 @@ def test_root_redirects_to_app(client):
     response = client.get("/")
     assert response.status_code == 303
     assert response.headers["location"] == "/app"
+
+
+def test_protected_routes_require_basic_auth(anonymous_client):
+    response = anonymous_client.get("/app")
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Basic"
+
+
+def test_wrong_basic_auth_is_rejected(anonymous_client):
+    response = anonymous_client.get("/app", auth=("test-user", "wrong-password"))
+    assert response.status_code == 401
+
+
+def test_health_is_public(anonymous_client):
+    response = anonymous_client.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
 
 
 def test_dashboard_renders_empty_state_when_no_campaigns(client):

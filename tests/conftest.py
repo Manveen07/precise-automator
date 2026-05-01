@@ -14,4 +14,6 @@ from app import store
 def fresh_mongomock(monkeypatch):
     fake_client = mongomock.MongoClient()
     monkeypatch.setattr(store, "_client", lambda: fake_client)
+    monkeypatch.setenv("APP_USERNAME", "test-user")
+    monkeypatch.setenv("APP_PASSWORD", "test-password")
     yield

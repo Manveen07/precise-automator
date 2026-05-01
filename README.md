@@ -40,12 +40,14 @@ FastAPI `BackgroundTasks`.
 |---|---|
 | `MONGODB_URL` | Atlas connection string |
 | `MONGODB_DB_NAME` | Database name (e.g. `infrabot`) |
+| `APP_USERNAME` | HTTP Basic auth username |
+| `APP_PASSWORD` | HTTP Basic auth password |
 | `ANTHROPIC_API_KEY` | Required for AI revisions / spintax |
 | `SMARTLEAD_PRECISELEAD_API_KEY` | API key for the PreciseLead workspace |
 | `SMARTLEAD_PRECISELEAD_CLIENT_ID` | Optional numeric override for PreciseLead; if blank, the app tries to fetch Smartlead clients and match `PreciseLead` by name. If the API key is client-scoped and cannot list clients, campaign creation omits `client_id` so Smartlead uses the key's default client. |
 | `SMARTLEAD_BELARDI_WONG_API_KEY` | API key for Belardi Wong |
 | `SMARTLEAD_DARLEAN_API_KEY` | API key for Darlean |
-| `APP_BASE_URL` | Used to register Smartlead reply webhooks (HTTPS only) |
+| `APP_BASE_URL` | Public app URL used in deployment metadata |
 
 ## Data model
 
@@ -78,3 +80,19 @@ in place — never creates a duplicate.
 ```
 
 Unit tests use `mongomock` so they don't need a live Atlas connection.
+
+## Render deployment
+
+This repo uses `render.yaml` for a single Docker web service. There is no
+Render Postgres, Redis, or worker service.
+
+1. Push the repo to GitHub.
+2. In Render, create a new Blueprint from the repo.
+3. Set every `sync: false` secret from the Render dashboard.
+4. Keep `MONGODB_DB_NAME=infrabot`; app data is isolated in the
+   `precise_automator_campaigns` collection.
+5. After deploy, verify `/health` returns 200, then open `/app` and confirm the
+   browser prompts for Basic auth.
+
+Before production, rotate any Mongo Atlas credential that was pasted into chat
+or shared outside Render's secret store.

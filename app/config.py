@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     APP_ENV: str = "local"
     APP_BASE_URL: str = "http://localhost:8000"
     APP_SECRET_KEY: str = "replace_me"
+    APP_USERNAME: str = ""
+    APP_PASSWORD: str = ""
     MONGODB_URL: str = "mongodb://localhost:27017"
     MONGODB_DB_NAME: str = "precise_automator"
     ANTHROPIC_API_KEY: str = "replace_me"
