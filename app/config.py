@@ -13,6 +13,7 @@ SMARTLEAD_WORKSPACES = [
         "name": "PreciseLead",
         "api_key_env": "SMARTLEAD_PRECISELEAD_API_KEY",
         "client_id_env": "SMARTLEAD_PRECISELEAD_CLIENT_ID",
+        "client_name": "PreciseLead",
     },
     {
         "key": "belardi_wong",
@@ -92,7 +93,7 @@ def get_workspace_config(workspace_key: str) -> dict | None:
             "name": workspace["name"],
             "api_key": api_key,
             "client_id": client_id,
-            "client_id_required": bool(client_id_env),
+            "client_name": workspace.get("client_name"),
         }
     return None
 

@@ -17,6 +17,7 @@ operator immediately, so this runs after the response is sent.
 
 import asyncio
 import json
+import re
 
 import httpx
 
@@ -59,15 +60,8 @@ async def _sync_campaign_async(campaign_id: str) -> None:
         if existing_smartlead_id:
             smartlead_id = existing_smartlead_id
         else:
-            if workspace.get("client_id_required") and not workspace.get("client_id"):
-                store.mark_sync_failed(
-                    campaign_id,
-                    f"Smartlead client id not configured for workspace '{doc['smartlead_workspace']}'",
-                )
-                return
-            create_response = await smartlead.create_campaign(
-                doc["campaign_name"], workspace.get("client_id")
-            )
+            client_id = await _resolve_client_id(smartlead, workspace)
+            create_response = await smartlead.create_campaign(doc["campaign_name"], client_id)
             smartlead_id = _extract_campaign_id(create_response)
 
         ooo_delay_days = int(plan.get("settings", {}).get("ooo_restart_delay_days", 10))
@@ -90,6 +84,54 @@ def _active_workspace_keys() -> set[str]:
     from app.config import SMARTLEAD_WORKSPACES
 
     return {w["key"] for w in SMARTLEAD_WORKSPACES}
+
+
+async def _resolve_client_id(smartlead: SmartleadService, workspace: dict) -> int | None:
+    """Return explicit env client_id or find it by Smartlead client name.
+
+    Smartlead's create campaign endpoint can omit client_id, but agency keys can
+    create under the wrong account if the intended client is not specified. For
+    workspaces with a configured client_name, fetch Smartlead clients and match
+    by normalized name. The env var remains an override.
+    """
+    if workspace.get("client_id"):
+        return workspace["client_id"]
+
+    client_name = workspace.get("client_name")
+    if not client_name:
+        return None
+
+    try:
+        response = await smartlead.get_clients()
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code in {401, 403}:
+            return None
+        raise
+    clients = response.get("data", response) if isinstance(response, dict) else response
+    if not isinstance(clients, list):
+        raise RuntimeError("Smartlead client list response did not include a data list")
+    if not clients:
+        return None
+
+    expected = _client_name_key(client_name)
+    matches = [client for client in clients if _client_name_key(str(client.get("name", ""))) == expected]
+    if not matches:
+        raise RuntimeError(f"Smartlead client named '{client_name}' was not found")
+    if len(matches) > 1:
+        raise RuntimeError(f"Smartlead returned multiple clients named '{client_name}'")
+
+    client_id = matches[0].get("id")
+    try:
+        parsed_client_id = int(client_id)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f"Smartlead client '{client_name}' returned invalid id: {client_id}") from exc
+    if parsed_client_id <= 0:
+        raise RuntimeError(f"Smartlead client '{client_name}' returned invalid id: {client_id}")
+    return parsed_client_id
+
+
+def _client_name_key(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", value.lower())
 
 
 def _extract_campaign_id(response: dict) -> int:
@@ -118,7 +160,7 @@ def _error_text(exc: Exception) -> str:
         response = exc.response
         return (
             f"{exc.__class__.__name__}: HTTP {response.status_code} for {response.request.method} "
-            f"{response.request.url}; body={_truncate(response.text)}"
+            f"{_redact_api_key(str(response.request.url))}; body={_truncate(response.text)}"
         )
     return f"{exc.__class__.__name__}: {exc}"
 
@@ -129,3 +171,7 @@ def _response_snippet(response: dict) -> str:
 
 def _truncate(value: str, limit: int = 1000) -> str:
     return value if len(value) <= limit else value[:limit] + "...[truncated]"
+
+
+def _redact_api_key(value: str) -> str:
+    return re.sub(r"([?&]api_key=)[^&]+", r"\1[redacted]", value)

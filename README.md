@@ -42,7 +42,7 @@ FastAPI `BackgroundTasks`.
 | `MONGODB_DB_NAME` | Database name (e.g. `infrabot`) |
 | `ANTHROPIC_API_KEY` | Required for AI revisions / spintax |
 | `SMARTLEAD_PRECISELEAD_API_KEY` | API key for the PreciseLead workspace |
-| `SMARTLEAD_PRECISELEAD_CLIENT_ID` | Numeric client id for PreciseLead |
+| `SMARTLEAD_PRECISELEAD_CLIENT_ID` | Optional numeric override for PreciseLead; if blank, the app tries to fetch Smartlead clients and match `PreciseLead` by name. If the API key is client-scoped and cannot list clients, campaign creation omits `client_id` so Smartlead uses the key's default client. |
 | `SMARTLEAD_BELARDI_WONG_API_KEY` | API key for Belardi Wong |
 | `SMARTLEAD_DARLEAN_API_KEY` | API key for Darlean |
 | `APP_BASE_URL` | Used to register Smartlead reply webhooks (HTTPS only) |

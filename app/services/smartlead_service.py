@@ -52,6 +52,9 @@ class SmartleadService:
             payload["client_id"] = client_id
         return await self.post("campaigns/create", payload)
 
+    async def get_clients(self) -> dict:
+        return await self.get("client/")
+
     async def apply_v1_settings(self, campaign_id: int, ooo_delay_days: int = 10) -> list[dict]:
         responses = []
         responses.append(

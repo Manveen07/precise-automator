@@ -52,6 +52,7 @@ def test_delete_archive_and_analytics_call_shapes():
         await service.get_campaign_statistics(123, limit=50, offset=10)
         await service.get_campaign_performance("2026-04-01", "2026-04-27", campaign_ids=[123])
         await service.add_leads(123, [{"email": "lead@example.com"}])
+        await service.get_clients()
 
         assert ("patch", "campaigns/123/status", {"status": "ARCHIVED"}) in service.calls
         assert ("delete", "campaigns/123", None) in service.calls
@@ -68,6 +69,7 @@ def test_delete_archive_and_analytics_call_shapes():
                 "campaign_ids": "123",
             },
         ) in service.calls
+        assert ("get", "client/", None) in service.calls
 
     asyncio.run(run())
 
