@@ -1,19 +1,7 @@
-from types import SimpleNamespace
-
 import httpx
 import pytest
-from rq.timeouts import TimerDeathPenalty
 
-from app.workers.rq_windows import WindowsSimpleWorker
-from app.workers.sync_campaign import _error_text, _extract_campaign_id, _mark_failed, _mark_succeeded
-
-
-class FakeDb:
-    def __init__(self):
-        self.commits = 0
-
-    def commit(self):
-        self.commits += 1
+from app.workers.sync_campaign import _error_text, _extract_campaign_id
 
 
 def test_extract_campaign_id_accepts_top_level_and_wrapped_responses():
@@ -41,26 +29,7 @@ def test_http_status_error_text_keeps_status_and_response_body():
     assert "temporary failure" in text
 
 
-def test_windows_worker_uses_timer_timeout_handler():
-    assert WindowsSimpleWorker.death_penalty_class is TimerDeathPenalty
-
-
-def test_run_status_updates_campaign_status_on_success_and_failure():
-    db = FakeDb()
-    request = SimpleNamespace(status="syncing")
-    run = SimpleNamespace(run_status="running", error_text=None, finished_at=None, request=request)
-
-    _mark_succeeded(db, run)
-
-    assert run.run_status == "succeeded"
-    assert request.status == "synced"
-    assert run.finished_at is not None
-
-    request.status = "syncing"
-    run.finished_at = None
-    _mark_failed(db, run, "boom")
-
-    assert run.run_status == "failed"
-    assert run.error_text == "boom"
-    assert request.status == "failed"
-    assert db.commits == 2
+def test_error_text_handles_non_http_exceptions():
+    text = _error_text(RuntimeError("boom"))
+    assert "RuntimeError" in text
+    assert "boom" in text

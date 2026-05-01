@@ -4,7 +4,7 @@
 <div class="page-heading">
   <div>
     <h1>New Campaign</h1>
-    <p class="muted">Create a request from an uploaded messaging file or pasted sequence copy.</p>
+    <p class="muted">Create a campaign from an uploaded messaging file or pasted sequence copy.</p>
   </div>
   <a class="button secondary" href="/app">Cancel</a>
 </div>
@@ -13,14 +13,7 @@
     <label>Workspace
       <select name="workspace_key">
         {% for workspace in workspaces %}
-        <option value="{{ workspace.workspace_key }}">{{ workspace.display_name }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>Template
-      <select name="template_key">
-        {% for template in templates %}
-        <option value="{{ template.template_key }}">{{ template.name }}</option>
+        <option value="{{ workspace.key }}">{{ workspace.name }}</option>
         {% endfor %}
       </select>
     </label>
@@ -55,7 +48,7 @@ Email 1
   </label>
 
   <div class="form-actions">
-    <button type="submit">Create Request</button>
+    <button type="submit">Create Campaign</button>
     <a class="button secondary" href="/app">Cancel</a>
   </div>
 </form>

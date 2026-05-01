@@ -4,7 +4,7 @@
 <div class="page-heading">
   <div>
     <h1>Campaigns</h1>
-    <p class="muted">Recent requests and their Smartlead sync status.</p>
+    <p class="muted">Recent campaigns and their Smartlead status.</p>
   </div>
   <a class="button" href="/campaigns/new">New Campaign</a>
 </div>
@@ -14,9 +14,8 @@
     <thead>
       <tr>
         <th>Name</th>
-        <th>App Status</th>
+        <th>Status</th>
         <th>Smartlead</th>
-        <th>Last Run</th>
         <th>Workspace</th>
         <th>Updated</th>
       </tr>
@@ -25,30 +24,17 @@
       {% for campaign in campaigns %}
       <tr>
         <td><a href="/campaigns/{{ campaign.id }}">{{ campaign.name }}</a></td>
-        <td>
-          <span class="badge status-{{ campaign.status }}">
-            {% if campaign.status == "synced" %}Smartlead draft created{% elif campaign.status == "approved" %}Ready to sync{% elif campaign.status == "needs_revision" %}Needs revision{% elif campaign.status == "drafting" %}Drafting{% elif campaign.status == "syncing" %}Syncing{% elif campaign.status == "failed" %}Failed{% elif campaign.status == "archived" %}Archived{% else %}{{ campaign.status_label or campaign.status }}{% endif %}
-          </span>
-        </td>
+        <td><span class="badge status-{{ campaign.status }}">{{ campaign.status_label }}</span></td>
         <td>
           {% if campaign.smartlead_id %}
-          <span class="badge status-synced">{{ campaign.smartlead_state or "Drafted in Smartlead" }}</span>
+          <span class="badge status-synced">{{ campaign.smartlead_state }}</span>
           <span class="muted">ID {{ campaign.smartlead_id }}</span>
           {% else %}
-          <span class="muted">{{ campaign.smartlead_state or "Not drafted" }}</span>
-          {% endif %}
-        </td>
-        <td>
-          {% if campaign.run_status %}
-          <span class="badge status-{{ campaign.run_status }}">
-            {% if campaign.run_status == "succeeded" %}Succeeded{% elif campaign.run_status == "queued" %}Queued{% elif campaign.run_status == "running" %}Running{% elif campaign.run_status == "retrying" %}Retrying{% elif campaign.run_status == "failed" %}Failed{% else %}{{ campaign.run_status_label or campaign.run_status }}{% endif %}
-          </span>
-          {% else %}
-          <span class="muted">—</span>
+          <span class="muted">{{ campaign.smartlead_state }}</span>
           {% endif %}
         </td>
         <td>{{ campaign.workspace }}</td>
-        <td class="muted">{{ campaign.updated_at.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td class="muted">{% if campaign.updated_at %}{{ campaign.updated_at.strftime("%Y-%m-%d %H:%M") }}{% else %}-{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -56,7 +42,7 @@
   {% else %}
   <div class="empty-state">
     <h2>No campaigns yet</h2>
-    <p class="muted">Create your first request to draft a sequence and sync it to Smartlead.</p>
+    <p class="muted">Create your first campaign to draft a sequence and sync it to Smartlead.</p>
     <a class="button" href="/campaigns/new">New Campaign</a>
   </div>
   {% endif %}

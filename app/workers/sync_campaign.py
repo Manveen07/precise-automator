@@ -1,210 +1,101 @@
+"""Sync a campaign doc to Smartlead.
+
+Runs as a FastAPI BackgroundTask after `POST /api/campaigns/{id}/sync`.
+
+Steps:
+  1. Load the campaign doc from Mongo.
+  2. Re-validate the plan (defensive; route already checks).
+  3. Resolve the workspace API key + client_id from env.
+  4. If no smartlead_campaign_id: create the Smartlead campaign.
+     Else: update the existing one in place.
+  5. Apply settings, schedule, sequences. Optionally attach email accounts.
+  6. Update the Mongo doc with the resulting smartlead_campaign_id and status.
+
+On failure, mark the doc `failed` with the error text. The route returns to the
+operator immediately, so this runs after the response is sent.
+"""
+
 import asyncio
 import json
-from datetime import datetime, timezone
-from urllib.parse import urlencode
 
 import httpx
-from sqlalchemy.orm import Session
 
-from app.config import get_secret_value, settings
-from app.db import SessionLocal
-from app.models import CampaignDraft, CampaignRun, CampaignRunStep, SmartleadWorkspace
+from app.config import get_workspace_config, settings
 from app.services.sequence_builder import build_smartlead_sequences
 from app.services.smartlead_service import SmartleadService
 from app.services.validation_service import validate_campaign_plan
+from app import store
 
 
-def sync_campaign(run_id: str) -> None:
-    asyncio.run(_sync_campaign(run_id))
+def sync_campaign_now(campaign_id: str) -> None:
+    """Synchronous entrypoint used by FastAPI BackgroundTasks."""
+    asyncio.run(_sync_campaign_async(campaign_id))
 
 
-async def _sync_campaign(run_id: str) -> None:
-    db = SessionLocal()
+async def _sync_campaign_async(campaign_id: str) -> None:
+    doc = store.get_campaign(campaign_id)
+    if not doc:
+        return
+
     try:
-        run = db.get(CampaignRun, run_id)
-        if not run:
-            raise RuntimeError(f"Campaign run not found: {run_id}")
-        run.run_status = "running"
-        run.started_at = datetime.now(timezone.utc)
-        db.commit()
-
-        draft = db.get(CampaignDraft, run.draft_id)
-        if not draft:
-            raise RuntimeError("Campaign draft not found")
-
-        workspace_keys = {row.workspace_key for row in db.query(SmartleadWorkspace).filter_by(active=True).all()}
-        errors = validate_campaign_plan(draft.draft_json, workspace_keys)
+        plan = doc.get("current_plan") or {}
+        workspace_keys = _active_workspace_keys()
+        errors = validate_campaign_plan(plan, workspace_keys)
         if errors:
-            _mark_failed(db, run, "Validation failed before sync: " + "; ".join(errors))
+            store.mark_sync_failed(campaign_id, "Validation failed: " + "; ".join(errors))
             return
 
-        workspace = db.query(SmartleadWorkspace).filter_by(workspace_key=draft.draft_json["workspace_key"]).one()
-        api_key = get_secret_value(workspace.api_key_env_name)
-        if not api_key:
-            raise RuntimeError(f"Missing Smartlead API key: {workspace.api_key_env_name}")
-        smartlead = SmartleadService(api_key)
-
-        campaign = await _log_step(
-            db,
-            run,
-            1,
-            "create_campaign",
-            {"name": draft.draft_json["campaign_name"], "client_id": workspace.client_id},
-            smartlead.create_campaign(draft.draft_json["campaign_name"], workspace.client_id),
-        )
-        campaign_id = _extract_campaign_id(campaign)
-        run.smartlead_campaign_id = campaign_id
-        db.commit()
-
-        ooo_delay_days = int(draft.draft_json.get("settings", {}).get("ooo_restart_delay_days", 10))
-        await _log_step(
-            db,
-            run,
-            2,
-            "apply_settings",
-            {"ooo_delay_days": ooo_delay_days},
-            smartlead.apply_v1_settings(campaign_id, ooo_delay_days),
-        )
-        await _log_step(
-            db,
-            run,
-            3,
-            "apply_schedule",
-            draft.draft_json["schedule"],
-            smartlead.post(f"campaigns/{campaign_id}/schedule", draft.draft_json["schedule"]),
-        )
-        sequences = build_smartlead_sequences(draft.draft_json["sequence"])
-        await _log_step(
-            db,
-            run,
-            4,
-            "push_sequences",
-            {"sequences": sequences},
-            smartlead.post(f"campaigns/{campaign_id}/sequences", {"sequences": sequences}),
-        )
-
-        step_order = 5
-        email_account_ids = draft.draft_json.get("inbox_selection", {}).get("email_account_ids") or []
-        if email_account_ids:
-            await _log_step(
-                db,
-                run,
-                step_order,
-                "attach_email_accounts",
-                {"email_account_ids": email_account_ids},
-                smartlead.attach_email_accounts(campaign_id, email_account_ids),
+        workspace = get_workspace_config(doc["smartlead_workspace"])
+        if not workspace or not workspace.get("api_key"):
+            store.mark_sync_failed(
+                campaign_id,
+                f"Smartlead API key not configured for workspace '{doc['smartlead_workspace']}'",
             )
-            step_order += 1
+            return
 
-        webhook_url = f"{settings.APP_BASE_URL}/api/webhooks/smartlead"
-        logged_webhook_url = webhook_url
-        if settings.SMARTLEAD_WEBHOOK_SECRET:
-            webhook_url = f"{webhook_url}?{urlencode({'secret': settings.SMARTLEAD_WEBHOOK_SECRET})}"
-            logged_webhook_url = f"{logged_webhook_url}?secret=[redacted]"
-        if settings.APP_BASE_URL.startswith("https://"):
-            await _log_step(
-                db,
-                run,
-                step_order,
-                "create_webhook",
-                {"webhook_url": logged_webhook_url, "event_types": ["EMAIL_REPLY", "LEAD_CATEGORY_UPDATED"]},
-                smartlead.create_webhook(campaign_id, webhook_url),
-            )
-            step_order += 1
+        smartlead = SmartleadService(workspace["api_key"])
+        existing_smartlead_id = doc.get("smartlead_campaign_id")
+
+        if existing_smartlead_id:
+            smartlead_id = existing_smartlead_id
         else:
-            _log_skipped_step(
-                db,
-                run,
-                step_order,
-                "create_webhook",
-                {"webhook_url": logged_webhook_url},
-                "APP_BASE_URL is not https; webhook creation skipped for local safety.",
+            create_response = await smartlead.create_campaign(
+                doc["campaign_name"], workspace.get("client_id")
             )
-            step_order += 1
+            smartlead_id = _extract_campaign_id(create_response)
 
-        verification = {
-            "campaign": await smartlead.get_campaign(campaign_id),
-            "sequences": await smartlead.get_sequences(campaign_id),
-        }
-        await _log_step(db, run, step_order, "verify_campaign", {}, _already_done(verification))
+        ooo_delay_days = int(plan.get("settings", {}).get("ooo_restart_delay_days", 10))
+        await smartlead.apply_v1_settings(smartlead_id, ooo_delay_days)
+        await smartlead.update_schedule(smartlead_id, plan["schedule"])
 
-        _mark_succeeded(db, run)
+        sequences = build_smartlead_sequences(plan["sequence"])
+        await smartlead.update_sequences(smartlead_id, sequences)
+
+        email_account_ids = plan.get("inbox_selection", {}).get("email_account_ids") or []
+        if email_account_ids:
+            await smartlead.attach_email_accounts(smartlead_id, email_account_ids)
+
+        if settings.APP_BASE_URL.startswith("https://"):
+            webhook_url = f"{settings.APP_BASE_URL}/api/webhooks/smartlead"
+            try:
+                await smartlead.create_webhook(smartlead_id, webhook_url)
+            except httpx.HTTPStatusError:
+                # Webhook creation failure shouldn't fail the sync; campaign is already created/updated.
+                pass
+
+        store.attach_smartlead(campaign_id, smartlead_id)
     except Exception as exc:
-        run = db.get(CampaignRun, run_id)
-        if run:
-            _mark_failed(db, run, _error_text(exc))
-        raise
-    finally:
-        db.close()
+        store.mark_sync_failed(campaign_id, _error_text(exc))
 
 
-async def _log_step(
-    db: Session,
-    run: CampaignRun,
-    order: int,
-    name: str,
-    request_json: dict,
-    awaitable,
-) -> dict:
-    step = CampaignRunStep(run_id=run.id, step_order=order, step_name=name, status="running", request_json=request_json)
-    db.add(step)
-    db.commit()
-    started = datetime.now(timezone.utc)
-    try:
-        response = await awaitable
-        step.status = "succeeded"
-        step.response_json = response if isinstance(response, dict) else {"ok": True}
-        step.duration_ms = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
-        db.commit()
-        return step.response_json
-    except Exception as exc:
-        step.status = "failed"
-        step.error_text = _error_text(exc)
-        step.duration_ms = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
-        db.commit()
-        raise
+def _active_workspace_keys() -> set[str]:
+    from app.config import SMARTLEAD_WORKSPACES
 
-
-def _log_skipped_step(
-    db: Session,
-    run: CampaignRun,
-    order: int,
-    name: str,
-    request_json: dict,
-    message: str,
-) -> None:
-    step = CampaignRunStep(
-        run_id=run.id,
-        step_order=order,
-        step_name=name,
-        status="skipped",
-        request_json=request_json,
-        response_json={"skipped": True, "reason": message},
-        error_text=message,
-        duration_ms=0,
-    )
-    db.add(step)
-    db.commit()
-
-
-def _mark_failed(db: Session, run: CampaignRun, message: str) -> None:
-    run.run_status = "failed"
-    run.error_text = message
-    run.finished_at = datetime.now(timezone.utc)
-    if run.request:
-        run.request.status = "failed"
-    db.commit()
-
-
-def _mark_succeeded(db: Session, run: CampaignRun) -> None:
-    run.run_status = "succeeded"
-    run.finished_at = datetime.now(timezone.utc)
-    if run.request:
-        run.request.status = "synced"
-    db.commit()
+    return {w["key"] for w in SMARTLEAD_WORKSPACES}
 
 
 def _extract_campaign_id(response: dict) -> int:
+    """Pull the integer campaign id out of Smartlead's create response."""
     for candidate in (response, response.get("data") if isinstance(response.get("data"), dict) else None):
         if not candidate:
             continue
@@ -231,7 +122,7 @@ def _error_text(exc: Exception) -> str:
             f"{exc.__class__.__name__}: HTTP {response.status_code} for {response.request.method} "
             f"{response.request.url}; body={_truncate(response.text)}"
         )
-    return str(exc)
+    return f"{exc.__class__.__name__}: {exc}"
 
 
 def _response_snippet(response: dict) -> str:
@@ -240,7 +131,3 @@ def _response_snippet(response: dict) -> str:
 
 def _truncate(value: str, limit: int = 1000) -> str:
     return value if len(value) <= limit else value[:limit] + "...[truncated]"
-
-
-async def _already_done(value: dict) -> dict:
-    return value

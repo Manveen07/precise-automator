@@ -1,334 +1,138 @@
-import uuid
-import asyncio
-from json import JSONDecodeError
-from types import SimpleNamespace
+"""Route-level tests using mongomock and FastAPI's TestClient.
 
-import httpx
+The fresh_mongomock fixture in conftest.py auto-applies, so every test gets
+an empty in-memory Mongo. These tests cover the wire-up — happy paths and
+the most important error cases. They do not call the real Smartlead or
+Anthropic APIs.
+"""
+
 import pytest
-from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from app.models import CampaignDraft, CampaignRequest, CampaignRun, ConversationSession, SmartleadWorkspace
 from app.main import app
-from app.routes import campaigns
+from app import store
 
 
-class FakeQuery:
-    def __init__(self, rows):
-        self.rows = rows
-
-    def filter_by(self, **kwargs):
-        filtered = []
-        for row in self.rows:
-            if all(getattr(row, key, None) == value for key, value in kwargs.items()):
-                filtered.append(row)
-        return FakeQuery(filtered)
-
-    def order_by(self, *_args):
-        return self
-
-    def all(self):
-        return self.rows
-
-    def first(self):
-        return self.rows[0] if self.rows else None
+@pytest.fixture
+def client():
+    return TestClient(app, follow_redirects=False)
 
 
-class FakeDb:
-    def __init__(self, campaign, latest_draft=None):
-        self.campaign = campaign
-        self.latest_draft = latest_draft
-        self.workspaces = [SimpleNamespace(workspace_key="smartlead_mcp", active=True)]
-        self.conversation_sessions = []
-        self.runs = []
-        self.added = []
-        self.commits = 0
-
-    def get(self, model, item_id):
-        if model is CampaignRequest and item_id == self.campaign.id:
-            return self.campaign
-        return None
-
-    def query(self, model):
-        if model is SmartleadWorkspace:
-            return FakeQuery(self.workspaces)
-        if model is CampaignDraft:
-            return FakeQuery([self.latest_draft] if self.latest_draft else [])
-        if model is ConversationSession:
-            return FakeQuery(self.conversation_sessions)
-        if model is CampaignRun:
-            return FakeQuery(self.runs)
-        return FakeQuery([])
-
-    def add(self, item):
-        if getattr(item, "id", None) is None:
-            item.id = uuid.uuid4()
-        self.added.append(item)
-        if isinstance(item, ConversationSession):
-            self.conversation_sessions.append(item)
-        if isinstance(item, CampaignRun):
-            self.runs.append(item)
-
-    def commit(self):
-        self.commits += 1
+# ---- Page rendering ---- #
 
 
-def make_campaign():
-    return SimpleNamespace(
-        id=uuid.uuid4(),
-        raw_input_json={
-            "workspace_key": "smartlead_mcp",
-            "template_key": "cold_email_standard_v1",
-            "campaign_name": "Darlean Benchmark",
-            "max_new_leads_per_day": 100,
-            "parsed_messaging": {
-                "selected_campaign": "Benchmark",
-                "subjects": ["Quick Benchmark"],
-                "steps": [
-                    {
-                        "step_number": 1,
-                        "body_variants": [{"variant_label": "A", "body": "Hi {{first_name}}\n%signature%"}],
-                    }
-                ],
-            },
-        },
-        template=SimpleNamespace(schema_version="campaign_plan_v1", system_prompt="", example_block=""),
-        status="drafting",
-        runs=[],
-    )
-
-
-def json_request():
-    return SimpleNamespace(headers={"accept": "application/json"})
-
-
-def test_generate_draft_is_deterministic_and_does_not_call_anthropic(monkeypatch):
-    def fail_if_called():
-        raise AssertionError("Generate Draft should not construct Anthropic service")
-
-    monkeypatch.setattr(campaigns, "AnthropicCampaignService", fail_if_called)
-    campaign = make_campaign()
-    db = FakeDb(campaign)
-
-    result = campaigns.generate_draft(campaign.id, request=json_request(), db=db)
-
-    draft = next(item for item in db.added if isinstance(item, CampaignDraft))
-    assert result["source"] == "local_parser"
-    assert result["validation_status"] == "valid"
-    assert draft.model_name == "local_parser"
-    assert draft.draft_json["sequence"][0]["variants"][0]["subject"] == "Quick Benchmark"
-
-
-def test_ai_revision_invalid_json_returns_error_without_500(monkeypatch):
-    class BadAnthropicService:
-        def revise_campaign_plan(self, **_kwargs):
-            raise JSONDecodeError("Expecting value", "not json", 0)
-
-    monkeypatch.setattr(campaigns, "_has_configured_anthropic_key", lambda: True)
-    monkeypatch.setattr(campaigns, "AnthropicCampaignService", BadAnthropicService)
-    campaign = make_campaign()
-    latest_draft = CampaignDraft(
-        id=uuid.uuid4(),
-        request_id=campaign.id,
-        draft_json={"workspace_key": "smartlead_mcp"},
-        validation_status="valid",
-    )
-    db = FakeDb(campaign, latest_draft)
-
-    result = campaigns.revise_draft(
-        campaign.id,
-        request=json_request(),
-        revision_instruction="make it shorter",
-        db=db,
-    )
-
-    assert result["ok"] is False
-    assert "not valid CampaignPlan JSON" in result["errors"][0]
-    assert db.commits == 1
-
-
-def test_html_form_posts_redirect_back_to_campaign_page():
-    campaign_id = uuid.uuid4()
-    response = campaigns._api_or_campaign_redirect(
-        SimpleNamespace(headers={"accept": "text/html,application/xhtml+xml"}),
-        {"ok": True},
-        campaign_id,
-    )
-
+def test_root_redirects_to_app(client):
+    response = client.get("/")
     assert response.status_code == 303
-    assert response.headers["location"] == f"/campaigns/{campaign_id}"
+    assert response.headers["location"] == "/app"
 
 
-def test_sync_idempotency_key_is_stable_for_same_campaign_and_draft():
-    campaign_id = uuid.uuid4()
-    draft_id = uuid.uuid4()
-
-    assert campaigns._sync_idempotency_key(campaign_id, draft_id) == campaigns._sync_idempotency_key(campaign_id, draft_id)
-
-
-def test_protected_sync_run_prefers_existing_smartlead_campaign():
-    draft_id = uuid.uuid4()
-    older = SimpleNamespace(
-        id=uuid.uuid4(),
-        draft_id=draft_id,
-        run_status="succeeded",
-        smartlead_campaign_id=123,
-        started_at=None,
-        finished_at=None,
-    )
-    newer = SimpleNamespace(
-        id=uuid.uuid4(),
-        draft_id=draft_id,
-        run_status="queued",
-        smartlead_campaign_id=None,
-        started_at=None,
-        finished_at=None,
-    )
-    campaign = SimpleNamespace(runs=[newer, older])
-
-    assert campaigns._protected_sync_run(campaign) is older
-
-
-def test_protected_sync_run_blocks_in_flight_run_regardless_of_draft_id():
-    """A second sync click while the first run is still queued/running must be blocked
-    even if the latest draft has a different id (e.g. operator regenerated mid-sync)."""
-    in_flight = SimpleNamespace(
-        id=uuid.uuid4(),
-        draft_id=uuid.uuid4(),
-        run_status="running",
-        smartlead_campaign_id=None,
-        started_at=None,
-        finished_at=None,
-    )
-    campaign = SimpleNamespace(runs=[in_flight])
-
-    assert campaigns._protected_sync_run(campaign) is in_flight
-
-
-def test_retryable_failed_run_can_be_reused_when_no_smartlead_id():
-    draft_id = uuid.uuid4()
-    failed = SimpleNamespace(
-        id=uuid.uuid4(),
-        draft_id=draft_id,
-        run_status="failed",
-        smartlead_campaign_id=None,
-        started_at=None,
-        finished_at=None,
-    )
-    campaign = SimpleNamespace(runs=[failed])
-
-    assert campaigns._retryable_failed_run(campaign, draft_id) is failed
-
-
-def test_dashboard_status_labels_are_operator_friendly():
-    assert campaigns._campaign_status_label("synced") == "Smartlead draft created"
-    assert campaigns._campaign_status_label("approved") == "Ready to sync"
-    assert campaigns._run_status_label("succeeded") == "Succeeded"
-
-
-def test_dashboard_renders_friendly_smartlead_draft_label():
-    client = TestClient(app)
+def test_dashboard_renders_empty_state_when_no_campaigns(client):
     response = client.get("/app")
-
     assert response.status_code == 200
-    if "test local mcp" in response.text:
-        assert "Drafted in Smartlead" in response.text
-        assert "Smartlead draft created" in response.text
+    assert "No campaigns yet" in response.text
 
 
-def test_extract_smartlead_campaign_id_accepts_url_query_and_raw_id():
-    assert campaigns._extract_smartlead_campaign_id("https://app.smartlead.ai/app/email-campaign/3248639/overview") == 3248639
-    assert campaigns._extract_smartlead_campaign_id("smartlead_campaign_id=123") == 123
-    assert campaigns._extract_smartlead_campaign_id("123") == 123
-    assert campaigns._extract_smartlead_campaign_id("not a campaign") is None
+def test_new_campaign_page_lists_all_three_workspaces(client):
+    response = client.get("/campaigns/new")
+    assert response.status_code == 200
+    assert 'value="preciselead"' in response.text
+    assert 'value="belardi_wong"' in response.text
+    assert 'value="darlean"' in response.text
 
 
-def test_target_smartlead_campaign_id_rejects_bad_explicit_ref():
-    with pytest.raises(HTTPException) as exc_info:
-        campaigns._target_smartlead_campaign_id(SimpleNamespace(runs=[]), "not a campaign")
-
-    assert exc_info.value.status_code == 400
+def test_campaign_detail_404_for_unknown_id(client):
+    response = client.get("/campaigns/507f1f77bcf86cd799439011")
+    assert response.status_code == 404
 
 
-def test_link_existing_smartlead_campaign_records_edit_target():
-    campaign = make_campaign()
-    draft = CampaignDraft(
-        id=uuid.uuid4(),
-        request_id=campaign.id,
-        draft_json={"workspace_key": "smartlead_mcp"},
-        validation_status="approved",
-    )
-    db = FakeDb(campaign, draft)
-
-    run = campaigns._link_smartlead_campaign(db, campaign, draft, 3248639)
-
-    assert run.smartlead_campaign_id == 3248639
-    assert run.run_status == "succeeded"
-    assert campaign.status == "synced"
-    assert db.commits == 1
+# ---- Campaign creation ---- #
 
 
-def test_smartlead_snapshot_payload_reports_partial_failures_without_raising():
-    class PartialSmartlead:
-        def campaign_url(self, campaign_id):
-            return f"https://app.smartlead.ai/app/email-campaign/{campaign_id}/overview"
-
-        async def get_campaign(self, campaign_id):
-            request = httpx.Request("GET", f"https://example.test/campaigns/{campaign_id}")
-            response = httpx.Response(404, request=request, text="not found")
-            raise httpx.HTTPStatusError("not found", request=request, response=response)
-
-        async def get_sequences(self, campaign_id):
-            return {"campaign_id": campaign_id, "sequences": []}
-
-    payload = asyncio.run(campaigns._smartlead_snapshot_payload(PartialSmartlead(), 3248639))
-
-    assert payload["ok"] is False
-    assert payload["campaign"]["ok"] is False
-    assert payload["sequences"]["ok"] is True
-    assert payload["errors"][0]["section"] == "campaign"
-
-
-def test_smartlead_analytics_payload_returns_each_section():
-    class RecordingAnalytics:
-        def campaign_url(self, campaign_id):
-            return f"https://app.smartlead.ai/app/email-campaign/{campaign_id}/overview"
-
-        async def get_campaign_analytics(self, campaign_id):
-            return {"campaign_id": campaign_id, "sent": 10}
-
-        async def get_campaign_statistics(self, campaign_id):
-            return {"campaign_id": campaign_id, "steps": []}
-
-        async def get_campaign_lead_statistics(self, campaign_id):
-            return {"campaign_id": campaign_id, "leads": []}
-
-        async def get_campaign_performance(self, start_date, end_date, campaign_ids):
-            return {"start_date": start_date, "end_date": end_date, "campaign_ids": campaign_ids}
-
-    payload = asyncio.run(campaigns._smartlead_analytics_payload(RecordingAnalytics(), 123, "2026-04-01", "2026-04-29"))
-
-    assert payload["ok"] is True
-    assert payload["date_range"] == {"start_date": "2026-04-01", "end_date": "2026-04-29"}
-    assert payload["performance"]["data"]["campaign_ids"] == [123]
-
-
-def test_smartlead_report_template_renders_success_and_failure_sections():
-    template = campaigns.templates.get_template("smartlead_report.html")
-    html = template.render(
-        title="Inspect Smartlead Campaign",
-        campaign=SimpleNamespace(id=uuid.uuid4(), raw_input_json={"campaign_name": "Linked Campaign"}),
-        payload={
-            "smartlead_campaign_id": 123,
-            "smartlead_url": "https://app.smartlead.ai/app/email-campaign/123/overview",
-            "errors": [{"section": "campaign", "error": "Campaign failed with HTTP 404"}],
+def test_create_campaign_with_pasted_messaging_persists_doc_and_redirects(client):
+    response = client.post(
+        "/api/campaigns/new",
+        data={
+            "workspace_key": "preciselead",
+            "campaign_name": "Test Campaign",
+            "max_new_leads_per_day": "50",
+            "messaging_text": "Subject Line Options:\n1. Quick test\n\nEmail 1\nV1\nHi {{first_name}}, test body.\n",
+            "selected_sequence_name": "",
         },
-        sections=[
-            {"key": "campaign", "label": "Campaign", "ok": False, "error": "Campaign failed with HTTP 404"},
-            {"key": "sequences", "label": "Sequences", "ok": True, "data": {"sequences": []}},
-        ],
     )
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/campaigns/")
 
-    assert "Inspect Smartlead Campaign" in html
-    assert "Campaign failed with HTTP 404" in html
-    assert "Open in Smartlead" in html
+    docs = store.list_recent_campaigns()
+    assert len(docs) == 1
+    doc = docs[0]
+    assert doc["campaign_name"] == "Test Campaign"
+    assert doc["smartlead_workspace"] == "preciselead"
+    assert doc["smartlead_campaign_id"] is None
+    assert doc["raw_input"]["max_new_leads_per_day"] == 50
+
+
+def test_create_campaign_rejects_unknown_workspace(client):
+    response = client.post(
+        "/api/campaigns/new",
+        data={
+            "workspace_key": "does_not_exist",
+            "campaign_name": "x",
+            "messaging_text": "1. subject\n\nEmail 1\nV1\nbody\n",
+        },
+    )
+    assert response.status_code == 400
+
+
+# ---- Smartlead linking ---- #
+
+
+def test_link_existing_smartlead_campaign_updates_doc(client):
+    doc = store.insert_campaign(
+        workspace_key="preciselead",
+        campaign_name="Link Test",
+        raw_input={"workspace_key": "preciselead", "campaign_name": "Link Test", "parsed_messaging": {}},
+        plan={"sequence": [], "schedule": {}, "settings": {}, "workspace_key": "preciselead"},
+        validation_errors=[],
+    )
+    campaign_id = str(doc["_id"])
+
+    response = client.post(
+        f"/api/campaigns/{campaign_id}/smartlead/link",
+        data={"smartlead_campaign_ref": "https://app.smartlead.ai/app/email-campaign/77777/overview"},
+    )
+    assert response.status_code in (200, 303)
+
+    refreshed = store.get_campaign(campaign_id)
+    assert refreshed["smartlead_campaign_id"] == 77777
+    assert refreshed["status"] == "synced"
+
+
+def test_link_rejects_invalid_smartlead_ref(client):
+    doc = store.insert_campaign(
+        workspace_key="preciselead",
+        campaign_name="Bad Link",
+        raw_input={"workspace_key": "preciselead", "campaign_name": "Bad Link", "parsed_messaging": {}},
+        plan={},
+        validation_errors=[],
+    )
+    response = client.post(
+        f"/api/campaigns/{doc['_id']}/smartlead/link",
+        data={"smartlead_campaign_ref": "this is not a number or url"},
+    )
+    assert response.status_code == 400
+
+
+# ---- Sync gating ---- #
+
+
+def test_sync_rejects_when_validation_errors_exist(client):
+    doc = store.insert_campaign(
+        workspace_key="preciselead",
+        campaign_name="Bad Plan",
+        raw_input={"workspace_key": "preciselead", "campaign_name": "Bad Plan", "parsed_messaging": {}},
+        plan={},
+        validation_errors=["something is wrong"],
+    )
+    response = client.post(f"/api/campaigns/{doc['_id']}/sync")
+    assert response.status_code == 400
