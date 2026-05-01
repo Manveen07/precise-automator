@@ -20,7 +20,7 @@ import json
 
 import httpx
 
-from app.config import get_workspace_config, settings
+from app.config import get_workspace_config
 from app.services.sequence_builder import build_smartlead_sequences
 from app.services.smartlead_service import SmartleadService
 from app.services.validation_service import validate_campaign_plan
@@ -59,6 +59,12 @@ async def _sync_campaign_async(campaign_id: str) -> None:
         if existing_smartlead_id:
             smartlead_id = existing_smartlead_id
         else:
+            if workspace.get("client_id_required") and not workspace.get("client_id"):
+                store.mark_sync_failed(
+                    campaign_id,
+                    f"Smartlead client id not configured for workspace '{doc['smartlead_workspace']}'",
+                )
+                return
             create_response = await smartlead.create_campaign(
                 doc["campaign_name"], workspace.get("client_id")
             )
@@ -74,14 +80,6 @@ async def _sync_campaign_async(campaign_id: str) -> None:
         email_account_ids = plan.get("inbox_selection", {}).get("email_account_ids") or []
         if email_account_ids:
             await smartlead.attach_email_accounts(smartlead_id, email_account_ids)
-
-        if settings.APP_BASE_URL.startswith("https://"):
-            webhook_url = f"{settings.APP_BASE_URL}/api/webhooks/smartlead"
-            try:
-                await smartlead.create_webhook(smartlead_id, webhook_url)
-            except httpx.HTTPStatusError:
-                # Webhook creation failure shouldn't fail the sync; campaign is already created/updated.
-                pass
 
         store.attach_smartlead(campaign_id, smartlead_id)
     except Exception as exc:

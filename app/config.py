@@ -92,6 +92,7 @@ def get_workspace_config(workspace_key: str) -> dict | None:
             "name": workspace["name"],
             "api_key": api_key,
             "client_id": client_id,
+            "client_id_required": bool(client_id_env),
         }
     return None
 
