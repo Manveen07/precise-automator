@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} - Precise Automator{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1>{{ title }}</h1>
+    <p class="muted">Smartlead ID {{ payload.smartlead_campaign_id }} for {{ campaign.raw_input_json.get("campaign_name", "Untitled campaign") }}</p>
+  </div>
+  <div class="header-actions">
+    <a class="button secondary" href="/campaigns/{{ campaign.id }}">Back to Campaign</a>
+    <a class="button secondary" href="{{ payload.smartlead_url }}" target="_blank" rel="noreferrer">Open in Smartlead</a>
+  </div>
+</div>
+
+{% if payload.errors %}
+<section class="panel">
+  <div class="notice warning">
+    <strong>Some Smartlead data could not be loaded.</strong>
+    {% for error in payload.errors %}
+    <p>{{ error.section }}: {{ error.error }}</p>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% for section in sections %}
+<section class="panel">
+  <div class="section-heading">
+    <h2>{{ section.label }}</h2>
+    {% if section.ok %}
+    <span class="badge status-succeeded">loaded</span>
+    {% else %}
+    <span class="badge status-failed">failed</span>
+    {% endif %}
+  </div>
+  {% if section.ok %}
+  <pre>{{ section.data | tojson(indent=2) }}</pre>
+  {% else %}
+  <div class="notice error"><p>{{ section.error }}</p></div>
+  {% endif %}
+</section>
+{% endfor %}
+{% endblock %}

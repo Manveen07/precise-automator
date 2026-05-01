@@ -4,7 +4,7 @@
 <div class="page-heading">
   <div>
     <h1>{{ campaign.campaign_name }}</h1>
-    <p class="muted">Workspace {{ campaign.workspace_key }}{% if campaign.raw_input.parsed_messaging.selected_campaign %} · {{ campaign.raw_input.parsed_messaging.selected_campaign }}{% endif %}</p>
+    <p class="muted">Workspace {{ campaign.workspace_key }}{% if campaign.raw_input.parsed_messaging.selected_campaign %} - {{ campaign.raw_input.parsed_messaging.selected_campaign }}{% endif %}</p>
   </div>
   <a class="button secondary" href="/app">Back to Dashboard</a>
 </div>
@@ -89,7 +89,7 @@
       <strong>{{ campaign.spintax_status.need }}</strong> of {{ campaign.spintax_status.total }} email bodies do not contain spintax.
       Click below to generate spintax for those bodies using Claude. Bodies that already have spintax will be left untouched.
     </p>
-    <p class="muted">This sends each body through Claude with a strict spintax-generation prompt. May take ~5–10 seconds per unique body.</p>
+    <p class="muted">This sends each body through Claude with a strict spintax-generation prompt. May take ~5-10 seconds per unique body.</p>
     <div class="modal-actions">
       <form method="post" action="/api/campaigns/{{ campaign.id }}/spintax" class="js-single-submit">
         <button type="submit">Generate Spintax with Claude</button>
@@ -108,9 +108,9 @@
   {% endif %}
   <div class="summary-grid compact">
     <div><span class="eyebrow">Daily Cap</span><strong class="summary-value">{{ campaign.latest_draft.draft_json.schedule.max_new_leads_per_day }}</strong></div>
-    <div><span class="eyebrow">Send Hours</span><strong class="summary-value">{{ campaign.latest_draft.draft_json.schedule.start_hour }}–{{ campaign.latest_draft.draft_json.schedule.end_hour }}</strong></div>
+    <div><span class="eyebrow">Send Hours</span><strong class="summary-value">{{ campaign.latest_draft.draft_json.schedule.start_hour }}-{{ campaign.latest_draft.draft_json.schedule.end_hour }}</strong></div>
     <div><span class="eyebrow">Timezone</span><strong class="summary-value">{{ campaign.latest_draft.draft_json.schedule.timezone }}</strong></div>
-    <div><span class="eyebrow">Tracking</span><strong class="summary-value">opens off · clicks off</strong></div>
+    <div><span class="eyebrow">Tracking</span><strong class="summary-value">opens off - clicks off</strong></div>
   </div>
   <div class="sequence-list">
     {% for step in campaign.latest_draft.draft_json.sequence %}
@@ -140,14 +140,14 @@
     </article>
     {% endfor %}
   </div>
-  <details>
+  <details class="clean-details">
     <summary>Raw draft JSON</summary>
     <pre>{{ campaign.latest_draft.draft_json | tojson(indent=2) }}</pre>
   </details>
 </section>
 
 <section class="panel">
-  <details>
+  <details class="clean-details">
     <summary>Optional AI Revision</summary>
     <p class="section-lead">Request a targeted change in plain English. The deterministic draft is preserved if revision fails.</p>
     <form method="post" action="/api/campaigns/{{ campaign.id }}/revise-draft" class="inline-form">
@@ -167,7 +167,19 @@
     <span class="badge">ID {{ campaign.latest_smartlead_run.smartlead_campaign_id }}</span>
     {% endif %}
   </div>
-  <p class="section-lead">Latest sync result and optional maintenance actions.</p>
+  <p class="section-lead">Sync, inspect, or edit an existing Smartlead campaign using the latest local draft.</p>
+
+  <form method="post" action="/api/campaigns/{{ campaign.id }}/smartlead/link" class="target-form">
+    <label>Use Existing Smartlead Campaign
+      <input
+        name="smartlead_campaign_ref"
+        placeholder="Paste Smartlead campaign link or ID"
+        autocomplete="off"
+      >
+    </label>
+    <button type="submit" class="secondary">Use as Edit Target</button>
+  </form>
+
   {% if campaign.runs %}
   <table>
     <thead>
@@ -181,32 +193,37 @@
       {% for run in campaign.runs %}
       <tr>
         <td><span class="badge status-{{ run.run_status }}">{{ run.run_status }}</span></td>
-        <td>{{ run.smartlead_campaign_id or "—" }}</td>
-        <td>{% if run.error_text %}<span class="muted">{{ run.error_text }}</span>{% else %}—{% endif %}</td>
+        <td>{{ run.smartlead_campaign_id or "-" }}</td>
+        <td>{% if run.error_text %}<span class="muted">{{ run.error_text }}</span>{% else %}-{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
   <hr class="divider">
-  <details>
+  <details class="clean-details">
     <summary>Smartlead Actions</summary>
     <div class="action-row">
-      <form method="post" action="/api/campaigns/{{ campaign.id }}/smartlead/apply">
+      <form method="post" action="/api/campaigns/{{ campaign.id }}/smartlead/apply" class="js-single-submit">
         <button type="submit" {% if not campaign.latest_smartlead_run %}disabled{% endif %}>Apply Latest Draft</button>
       </form>
+      {% if campaign.latest_smartlead_run %}
       <a class="button secondary" href="/api/campaigns/{{ campaign.id }}/smartlead">Inspect</a>
       <a class="button secondary" href="/api/campaigns/{{ campaign.id }}/analytics">Analytics</a>
+      {% else %}
+      <button type="button" class="secondary" disabled>Inspect</button>
+      <button type="button" class="secondary" disabled>Analytics</button>
+      {% endif %}
       <span class="spacer"></span>
-      <form method="post" action="/api/campaigns/{{ campaign.id }}/smartlead/archive">
+      <form method="post" action="/api/campaigns/{{ campaign.id }}/smartlead/archive" class="js-single-submit">
         <button type="submit" class="secondary" {% if not campaign.latest_smartlead_run %}disabled{% endif %}>Archive</button>
       </form>
-      <form method="post" action="/api/campaigns/{{ campaign.id }}/smartlead/delete" onsubmit="return confirm('Permanently delete this Smartlead campaign and associated data?');">
+      <form method="post" action="/api/campaigns/{{ campaign.id }}/smartlead/delete" class="js-single-submit" onsubmit="return confirm('Permanently delete this Smartlead campaign and associated data?');">
         <button type="submit" class="danger" {% if not campaign.latest_smartlead_run %}disabled{% endif %}>Delete</button>
       </form>
     </div>
   </details>
   {% else %}
-  <p class="muted">No Smartlead sync run yet. Click <strong>Approve &amp; Sync to Smartlead</strong> above.</p>
+  <p class="muted">No Smartlead sync run yet. Click <strong>Approve &amp; Sync to Smartlead</strong> above or paste an existing Smartlead link.</p>
   {% endif %}
 </section>
 
@@ -216,14 +233,14 @@
 
   {% if campaign.raw_input.parsed_messaging.warnings %}
   <div class="notice warning">
-    <strong>Parser warnings — check your source file:</strong>
+    <strong>Parser warnings - check your source file:</strong>
     {% for w in campaign.raw_input.parsed_messaging.warnings %}
     <p>{{ w }}</p>
     {% endfor %}
   </div>
   {% endif %}
 
-  <details>
+  <details class="clean-details">
     <summary>View parser output</summary>
     <pre>{{ campaign.raw_input.parsed_messaging | tojson(indent=2) }}</pre>
   </details>

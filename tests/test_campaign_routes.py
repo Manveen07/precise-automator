@@ -1,10 +1,14 @@
 import uuid
+import asyncio
 from json import JSONDecodeError
 from types import SimpleNamespace
 
+import httpx
+import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from app.models import CampaignDraft, CampaignRequest, ConversationSession, SmartleadWorkspace
+from app.models import CampaignDraft, CampaignRequest, CampaignRun, ConversationSession, SmartleadWorkspace
 from app.main import app
 from app.routes import campaigns
 
@@ -36,6 +40,7 @@ class FakeDb:
         self.latest_draft = latest_draft
         self.workspaces = [SimpleNamespace(workspace_key="smartlead_mcp", active=True)]
         self.conversation_sessions = []
+        self.runs = []
         self.added = []
         self.commits = 0
 
@@ -51,6 +56,8 @@ class FakeDb:
             return FakeQuery([self.latest_draft] if self.latest_draft else [])
         if model is ConversationSession:
             return FakeQuery(self.conversation_sessions)
+        if model is CampaignRun:
+            return FakeQuery(self.runs)
         return FakeQuery([])
 
     def add(self, item):
@@ -59,6 +66,8 @@ class FakeDb:
         self.added.append(item)
         if isinstance(item, ConversationSession):
             self.conversation_sessions.append(item)
+        if isinstance(item, CampaignRun):
+            self.runs.append(item)
 
     def commit(self):
         self.commits += 1
@@ -85,6 +94,7 @@ def make_campaign():
         },
         template=SimpleNamespace(schema_version="campaign_plan_v1", system_prompt="", example_block=""),
         status="drafting",
+        runs=[],
     )
 
 
@@ -224,3 +234,101 @@ def test_dashboard_renders_friendly_smartlead_draft_label():
     if "test local mcp" in response.text:
         assert "Drafted in Smartlead" in response.text
         assert "Smartlead draft created" in response.text
+
+
+def test_extract_smartlead_campaign_id_accepts_url_query_and_raw_id():
+    assert campaigns._extract_smartlead_campaign_id("https://app.smartlead.ai/app/email-campaign/3248639/overview") == 3248639
+    assert campaigns._extract_smartlead_campaign_id("smartlead_campaign_id=123") == 123
+    assert campaigns._extract_smartlead_campaign_id("123") == 123
+    assert campaigns._extract_smartlead_campaign_id("not a campaign") is None
+
+
+def test_target_smartlead_campaign_id_rejects_bad_explicit_ref():
+    with pytest.raises(HTTPException) as exc_info:
+        campaigns._target_smartlead_campaign_id(SimpleNamespace(runs=[]), "not a campaign")
+
+    assert exc_info.value.status_code == 400
+
+
+def test_link_existing_smartlead_campaign_records_edit_target():
+    campaign = make_campaign()
+    draft = CampaignDraft(
+        id=uuid.uuid4(),
+        request_id=campaign.id,
+        draft_json={"workspace_key": "smartlead_mcp"},
+        validation_status="approved",
+    )
+    db = FakeDb(campaign, draft)
+
+    run = campaigns._link_smartlead_campaign(db, campaign, draft, 3248639)
+
+    assert run.smartlead_campaign_id == 3248639
+    assert run.run_status == "succeeded"
+    assert campaign.status == "synced"
+    assert db.commits == 1
+
+
+def test_smartlead_snapshot_payload_reports_partial_failures_without_raising():
+    class PartialSmartlead:
+        def campaign_url(self, campaign_id):
+            return f"https://app.smartlead.ai/app/email-campaign/{campaign_id}/overview"
+
+        async def get_campaign(self, campaign_id):
+            request = httpx.Request("GET", f"https://example.test/campaigns/{campaign_id}")
+            response = httpx.Response(404, request=request, text="not found")
+            raise httpx.HTTPStatusError("not found", request=request, response=response)
+
+        async def get_sequences(self, campaign_id):
+            return {"campaign_id": campaign_id, "sequences": []}
+
+    payload = asyncio.run(campaigns._smartlead_snapshot_payload(PartialSmartlead(), 3248639))
+
+    assert payload["ok"] is False
+    assert payload["campaign"]["ok"] is False
+    assert payload["sequences"]["ok"] is True
+    assert payload["errors"][0]["section"] == "campaign"
+
+
+def test_smartlead_analytics_payload_returns_each_section():
+    class RecordingAnalytics:
+        def campaign_url(self, campaign_id):
+            return f"https://app.smartlead.ai/app/email-campaign/{campaign_id}/overview"
+
+        async def get_campaign_analytics(self, campaign_id):
+            return {"campaign_id": campaign_id, "sent": 10}
+
+        async def get_campaign_statistics(self, campaign_id):
+            return {"campaign_id": campaign_id, "steps": []}
+
+        async def get_campaign_lead_statistics(self, campaign_id):
+            return {"campaign_id": campaign_id, "leads": []}
+
+        async def get_campaign_performance(self, start_date, end_date, campaign_ids):
+            return {"start_date": start_date, "end_date": end_date, "campaign_ids": campaign_ids}
+
+    payload = asyncio.run(campaigns._smartlead_analytics_payload(RecordingAnalytics(), 123, "2026-04-01", "2026-04-29"))
+
+    assert payload["ok"] is True
+    assert payload["date_range"] == {"start_date": "2026-04-01", "end_date": "2026-04-29"}
+    assert payload["performance"]["data"]["campaign_ids"] == [123]
+
+
+def test_smartlead_report_template_renders_success_and_failure_sections():
+    template = campaigns.templates.get_template("smartlead_report.html")
+    html = template.render(
+        title="Inspect Smartlead Campaign",
+        campaign=SimpleNamespace(id=uuid.uuid4(), raw_input_json={"campaign_name": "Linked Campaign"}),
+        payload={
+            "smartlead_campaign_id": 123,
+            "smartlead_url": "https://app.smartlead.ai/app/email-campaign/123/overview",
+            "errors": [{"section": "campaign", "error": "Campaign failed with HTTP 404"}],
+        },
+        sections=[
+            {"key": "campaign", "label": "Campaign", "ok": False, "error": "Campaign failed with HTTP 404"},
+            {"key": "sequences", "label": "Sequences", "ok": True, "data": {"sequences": []}},
+        ],
+    )
+
+    assert "Inspect Smartlead Campaign" in html
+    assert "Campaign failed with HTTP 404" in html
+    assert "Open in Smartlead" in html

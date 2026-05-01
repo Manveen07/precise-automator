@@ -438,7 +438,7 @@ th {
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18);
   font-size: 14px;
   color: var(--ink);
-  background: var(--paper);
+  background: var(--panel);
 }
 
 .modal::backdrop {
@@ -482,14 +482,52 @@ th {
 
 details { margin-top: 16px; }
 
+.clean-details {
+  margin-top: 0;
+}
+
 summary {
   cursor: pointer;
   font-weight: 600;
   color: var(--ink-soft);
   font-size: 13px;
+  line-height: 1.4;
 }
 
 summary:hover { color: var(--accent); }
+
+.clean-details > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  list-style: none;
+}
+
+.clean-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.clean-details > summary::before {
+  content: "+";
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.clean-details[open] > summary::before {
+  content: "-";
+}
+
+.clean-details .section-lead {
+  margin: 8px 0 16px;
+}
 
 .section-lead {
   color: var(--muted);
@@ -518,6 +556,14 @@ summary:hover { color: var(--accent); }
 
 .action-row .spacer { flex: 1; }
 
+.target-form {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  margin: 14px 0 18px;
+}
+
 .divider {
   border: none;
   border-top: 1px solid var(--border);
@@ -526,6 +572,8 @@ summary:hover { color: var(--accent); }
 
 @media (max-width: 720px) {
   .upload-row { grid-template-columns: 1fr; }
+
+  .target-form { grid-template-columns: 1fr; }
 
   .topbar-inner,
   .page-heading,

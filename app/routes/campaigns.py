@@ -1,9 +1,12 @@
 import uuid
-from datetime import date, timedelta
+from collections.abc import Awaitable, Callable
+from datetime import UTC, date, datetime, timedelta
 from json import JSONDecodeError
+import re
 
 from anthropic import AnthropicError
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
+import httpx
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from redis import Redis
@@ -460,7 +463,7 @@ def _run_by_idempotency_key(db: Session, idempotency_key: str) -> CampaignRun | 
 def _protected_sync_run(campaign: CampaignRequest) -> CampaignRun | None:
     """Block any second sync for this campaign request while *any* prior run is queued, running,
     retrying, succeeded, or has produced a Smartlead campaign id. The previous code only blocked
-    in-flight runs whose draft_id matched the new sync — meaning a regenerated/revised draft could
+    in-flight runs whose draft_id matched the new sync - meaning a regenerated/revised draft could
     bypass the in-flight check and create a second Smartlead campaign before the first finished."""
     smartlead_run = _latest_smartlead_run(campaign)
     if smartlead_run:
@@ -568,15 +571,52 @@ def campaign_status(campaign_id: uuid.UUID, db: Session = Depends(get_db)) -> di
 
 
 @router.get("/api/campaigns/{campaign_id}/smartlead")
-async def smartlead_campaign_snapshot(campaign_id: uuid.UUID, db: Session = Depends(get_db)) -> dict:
+async def smartlead_campaign_snapshot(
+    campaign_id: uuid.UUID,
+    request: Request,
+    smartlead_campaign_ref: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
     campaign = _load_campaign(db, campaign_id)
-    smartlead_campaign_id = _latest_smartlead_campaign_id(campaign)
+    smartlead_campaign_id = _target_smartlead_campaign_id(campaign, smartlead_campaign_ref)
     smartlead = _smartlead_for_campaign(campaign)
-    return {
-        "smartlead_campaign_id": smartlead_campaign_id,
-        "campaign": await smartlead.get_campaign(smartlead_campaign_id),
-        "sequences": await smartlead.get_sequences(smartlead_campaign_id),
-    }
+    payload = await _smartlead_snapshot_payload(smartlead, smartlead_campaign_id)
+    if _wants_html(request):
+        return templates.TemplateResponse(
+            request,
+            "smartlead_report.html",
+            {
+                "campaign": campaign,
+                "title": "Inspect Smartlead Campaign",
+                "payload": payload,
+                "sections": _report_sections(payload, ["campaign", "sequences"]),
+            },
+        )
+    return payload
+
+
+@router.post("/api/campaigns/{campaign_id}/smartlead/link")
+def link_existing_smartlead_campaign(
+    campaign_id: uuid.UUID,
+    request: Request,
+    smartlead_campaign_ref: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    campaign = _load_campaign(db, campaign_id)
+    smartlead_campaign_id = _extract_smartlead_campaign_id(smartlead_campaign_ref)
+    if not smartlead_campaign_id:
+        raise HTTPException(status_code=400, detail="Paste a valid Smartlead campaign URL or numeric campaign ID")
+
+    draft = _latest_syncable_draft(db, campaign.id) or _latest_draft(db, campaign.id)
+    if not draft:
+        raise HTTPException(status_code=400, detail="Generate a draft before linking a Smartlead campaign")
+
+    run = _link_smartlead_campaign(db, campaign, draft, smartlead_campaign_id)
+    return _api_or_campaign_redirect(
+        request,
+        {"ok": True, "smartlead_campaign_id": run.smartlead_campaign_id, "run_id": str(run.id)},
+        campaign_id,
+    )
 
 
 @router.post("/api/campaigns/{campaign_id}/smartlead/apply")
@@ -659,26 +699,33 @@ async def delete_smartlead_campaign(campaign_id: uuid.UUID, request: Request, db
 @router.get("/api/campaigns/{campaign_id}/analytics")
 async def smartlead_campaign_analytics(
     campaign_id: uuid.UUID,
+    request: Request,
+    smartlead_campaign_ref: str | None = Query(None),
     start_date: str | None = None,
     end_date: str | None = None,
     db: Session = Depends(get_db),
-) -> dict:
+):
     campaign = _load_campaign(db, campaign_id)
-    smartlead_campaign_id = _latest_smartlead_campaign_id(campaign)
+    smartlead_campaign_id = _target_smartlead_campaign_id(campaign, smartlead_campaign_ref)
     smartlead = _smartlead_for_campaign(campaign)
     end_value = end_date or date.today().isoformat()
     start_value = start_date or (date.today() - timedelta(days=30)).isoformat()
-    return {
-        "smartlead_campaign_id": smartlead_campaign_id,
-        "top_level": await smartlead.get_campaign_analytics(smartlead_campaign_id),
-        "sequence_statistics": await smartlead.get_campaign_statistics(smartlead_campaign_id),
-        "lead_statistics": await smartlead.get_campaign_lead_statistics(smartlead_campaign_id),
-        "performance": await smartlead.get_campaign_performance(
-            start_value,
-            end_value,
-            campaign_ids=[smartlead_campaign_id],
-        ),
-    }
+    payload = await _smartlead_analytics_payload(smartlead, smartlead_campaign_id, start_value, end_value)
+    if _wants_html(request):
+        return templates.TemplateResponse(
+            request,
+            "smartlead_report.html",
+            {
+                "campaign": campaign,
+                "title": "Smartlead Analytics",
+                "payload": payload,
+                "sections": _report_sections(
+                    payload,
+                    ["top_level", "sequence_statistics", "lead_statistics", "performance"],
+                ),
+            },
+        )
+    return payload
 
 
 def _latest_draft(db: Session, request_id: uuid.UUID) -> CampaignDraft | None:
@@ -719,6 +766,156 @@ def _latest_smartlead_campaign_id(campaign: CampaignRequest) -> int:
         if run.smartlead_campaign_id:
             return run.smartlead_campaign_id
     raise HTTPException(status_code=400, detail="No Smartlead campaign has been created for this request yet")
+
+
+def _target_smartlead_campaign_id(campaign: CampaignRequest, smartlead_campaign_ref: str | None = None) -> int:
+    if smartlead_campaign_ref and smartlead_campaign_ref.strip():
+        parsed_id = _extract_smartlead_campaign_id(smartlead_campaign_ref)
+        if not parsed_id:
+            raise HTTPException(status_code=400, detail="Paste a valid Smartlead campaign URL or numeric campaign ID")
+        return parsed_id
+    return _latest_smartlead_campaign_id(campaign)
+
+
+def _extract_smartlead_campaign_id(value: str) -> int | None:
+    text = (value or "").strip()
+    if not text:
+        return None
+    patterns = (
+        r"(?:email-campaign|campaign)/(\d+)",
+        r"(?:campaign_id|smartlead_campaign_id)=(\d+)",
+        r"\b(\d+)\b",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if not match:
+            continue
+        campaign_id = int(match.group(1))
+        if campaign_id > 0:
+            return campaign_id
+    return None
+
+
+def _link_smartlead_campaign(
+    db: Session,
+    campaign: CampaignRequest,
+    draft: CampaignDraft,
+    smartlead_campaign_id: int,
+) -> CampaignRun:
+    idempotency_key = f"{campaign.id}:smartlead_link:{smartlead_campaign_id}"
+    run = db.query(CampaignRun).filter_by(idempotency_key=idempotency_key).first()
+    now = datetime.now(UTC)
+    if not run:
+        run = CampaignRun(
+            request_id=campaign.id,
+            draft_id=draft.id,
+            smartlead_campaign_id=smartlead_campaign_id,
+            run_status="succeeded",
+            idempotency_key=idempotency_key,
+            started_at=now,
+            finished_at=now,
+        )
+        db.add(run)
+    else:
+        run.draft_id = draft.id
+        run.smartlead_campaign_id = smartlead_campaign_id
+        run.run_status = "succeeded"
+        run.error_text = None
+        run.started_at = run.started_at or now
+        run.finished_at = now
+    campaign.status = "synced"
+    db.commit()
+    return run
+
+
+async def _smartlead_snapshot_payload(smartlead: SmartleadService, smartlead_campaign_id: int) -> dict:
+    sections = {
+        "campaign": await _safe_smartlead_call("Campaign", lambda: smartlead.get_campaign(smartlead_campaign_id)),
+        "sequences": await _safe_smartlead_call("Sequences", lambda: smartlead.get_sequences(smartlead_campaign_id)),
+    }
+    return _smartlead_payload(smartlead, smartlead_campaign_id, sections)
+
+
+async def _smartlead_analytics_payload(
+    smartlead: SmartleadService,
+    smartlead_campaign_id: int,
+    start_date: str,
+    end_date: str,
+) -> dict:
+    sections = {
+        "top_level": await _safe_smartlead_call(
+            "Top-level analytics",
+            lambda: smartlead.get_campaign_analytics(smartlead_campaign_id),
+        ),
+        "sequence_statistics": await _safe_smartlead_call(
+            "Sequence statistics",
+            lambda: smartlead.get_campaign_statistics(smartlead_campaign_id),
+        ),
+        "lead_statistics": await _safe_smartlead_call(
+            "Lead statistics",
+            lambda: smartlead.get_campaign_lead_statistics(smartlead_campaign_id),
+        ),
+        "performance": await _safe_smartlead_call(
+            "Performance",
+            lambda: smartlead.get_campaign_performance(
+                start_date,
+                end_date,
+                campaign_ids=[smartlead_campaign_id],
+            ),
+        ),
+    }
+    payload = _smartlead_payload(smartlead, smartlead_campaign_id, sections)
+    payload["date_range"] = {"start_date": start_date, "end_date": end_date}
+    return payload
+
+
+async def _safe_smartlead_call(label: str, call: Callable[[], Awaitable[dict]]) -> dict:
+    try:
+        return {"ok": True, "data": await call()}
+    except httpx.HTTPStatusError as exc:
+        return {"ok": False, "error": _smartlead_http_error(label, exc)}
+    except httpx.RequestError as exc:
+        return {"ok": False, "error": f"{label} request failed: {exc.__class__.__name__}: {exc}"}
+    except ValueError as exc:
+        return {"ok": False, "error": f"{label} returned an invalid JSON response: {exc}"}
+
+
+def _smartlead_http_error(label: str, exc: httpx.HTTPStatusError) -> str:
+    body = (exc.response.text or "").strip()
+    if len(body) > 500:
+        body = f"{body[:500]}..."
+    suffix = f" - {body}" if body else ""
+    return f"{label} failed with HTTP {exc.response.status_code}{suffix}"
+
+
+def _smartlead_payload(smartlead: SmartleadService, smartlead_campaign_id: int, sections: dict) -> dict:
+    errors = [
+        {"section": section, "error": result["error"]}
+        for section, result in sections.items()
+        if not result.get("ok")
+    ]
+    return {
+        "ok": not errors,
+        "smartlead_campaign_id": smartlead_campaign_id,
+        "smartlead_url": smartlead.campaign_url(smartlead_campaign_id),
+        "errors": errors,
+        **sections,
+    }
+
+
+def _report_sections(payload: dict, section_names: list[str]) -> list[dict]:
+    return [
+        {
+            "key": section_name,
+            "label": section_name.replace("_", " ").title(),
+            **payload.get(section_name, {"ok": False, "error": "No response captured"}),
+        }
+        for section_name in section_names
+    ]
+
+
+def _wants_html(request: Request) -> bool:
+    return "text/html" in request.headers.get("accept", "")
 
 
 def _smartlead_for_campaign(campaign: CampaignRequest) -> SmartleadService:
