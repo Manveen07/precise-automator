@@ -71,6 +71,19 @@ def campaign_detail(campaign_id: str, request: Request):
     return templates.TemplateResponse(request, "campaign_detail.html", {"campaign": payload})
 
 
+@router.get("/api/campaigns/{campaign_id}/status")
+def campaign_status(campaign_id: str) -> dict:
+    doc = _require_campaign(campaign_id)
+    return {
+        "id": str(doc["_id"]),
+        "status": doc.get("status", "drafting"),
+        "status_label": _status_label(doc.get("status", "drafting")),
+        "smartlead_campaign_id": doc.get("smartlead_campaign_id"),
+        "last_sync_error": doc.get("last_sync_error"),
+        "updated_at": doc.get("updated_at").isoformat() if doc.get("updated_at") else None,
+    }
+
+
 # ----- Mutations: create, revise, spintax ----- #
 
 

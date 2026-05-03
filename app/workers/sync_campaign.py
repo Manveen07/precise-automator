@@ -63,6 +63,17 @@ async def _sync_campaign_async(campaign_id: str) -> None:
             client_id = await _resolve_client_id(smartlead, workspace)
             create_response = await smartlead.create_campaign(doc["campaign_name"], client_id)
             smartlead_id = _extract_campaign_id(create_response)
+            store.campaigns_collection().update_one(
+                {"_id": doc["_id"]},
+                {
+                    "$set": {
+                        "smartlead_campaign_id": smartlead_id,
+                        "status": "syncing",
+                        "last_sync_error": None,
+                        "updated_at": store.now_utc(),
+                    }
+                },
+            )
 
         ooo_delay_days = int(plan.get("settings", {}).get("ooo_restart_delay_days", 10))
         await smartlead.apply_v1_settings(smartlead_id, ooo_delay_days)

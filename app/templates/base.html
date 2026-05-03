@@ -16,6 +16,7 @@
     <main class="shell">
       {% block content %}{% endblock %}
     </main>
+    {% block scripts %}{% endblock %}
     <script>
       document.addEventListener("submit", (event) => {
         const form = event.target;

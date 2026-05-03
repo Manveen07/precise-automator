@@ -147,6 +147,42 @@ def test_link_rejects_invalid_smartlead_ref(client):
     assert response.status_code == 400
 
 
+def test_campaign_status_endpoint_returns_current_sync_state(client):
+    doc = store.insert_campaign(
+        workspace_key="preciselead",
+        campaign_name="Status Test",
+        raw_input={"workspace_key": "preciselead", "campaign_name": "Status Test", "parsed_messaging": {}},
+        plan={"sequence": [], "schedule": {}, "settings": {}, "workspace_key": "preciselead"},
+        validation_errors=[],
+    )
+    store.campaigns_collection().update_one(
+        {"_id": doc["_id"]},
+        {"$set": {"status": "syncing", "smartlead_campaign_id": 12345}},
+    )
+
+    response = client.get(f"/api/campaigns/{doc['_id']}/status")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "syncing"
+    assert response.json()["smartlead_campaign_id"] == 12345
+
+
+def test_syncing_campaign_detail_includes_status_polling(client):
+    doc = store.insert_campaign(
+        workspace_key="preciselead",
+        campaign_name="Polling Test",
+        raw_input={"workspace_key": "preciselead", "campaign_name": "Polling Test", "parsed_messaging": {}},
+        plan={"sequence": [], "schedule": {}, "settings": {}, "workspace_key": "preciselead"},
+        validation_errors=[],
+    )
+    store.campaigns_collection().update_one({"_id": doc["_id"]}, {"$set": {"status": "syncing"}})
+
+    response = client.get(f"/campaigns/{doc['_id']}")
+
+    assert response.status_code == 200
+    assert f"/api/campaigns/{doc['_id']}/status" in response.text
+
+
 # ---- Sync gating ---- #
 
 
