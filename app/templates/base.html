@@ -10,7 +10,13 @@
     <header class="topbar">
       <div class="topbar-inner">
         <a class="brand" href="/app">Precise Automator</a>
-        <nav class="nav-links"><a href="/app">Dashboard</a><a href="/campaigns/new">New Campaign</a></nav>
+        <nav class="nav-links">
+          <a href="/app">Dashboard</a>
+          <a href="/campaigns/new">New Campaign</a>
+          <form method="post" action="/logout" class="logout-form">
+            <button type="submit">Logout</button>
+          </form>
+        </nav>
       </div>
     </header>
     <main class="shell">

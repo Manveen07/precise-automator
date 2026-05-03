@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Login - Precise Automator</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body class="login-page">
+    <main class="login-shell">
+      <section class="login-panel">
+        <h1>Precise Automator</h1>
+        <p class="muted">Sign in to create and update Smartlead campaign drafts.</p>
+        {% if error %}
+        <div class="notice error">{{ error }}</div>
+        {% endif %}
+        <form method="post" action="/login" class="form-panel">
+          <input type="hidden" name="next" value="{{ next }}">
+          <label>Username
+            <input name="username" autocomplete="username" required autofocus>
+          </label>
+          <label>Password
+            <input name="password" type="password" autocomplete="current-password" required>
+          </label>
+          <button type="submit">Login</button>
+        </form>
+      </section>
+    </main>
+  </body>
+</html>

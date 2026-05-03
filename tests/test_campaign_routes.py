@@ -34,10 +34,10 @@ def test_root_redirects_to_app(client):
     assert response.headers["location"] == "/app"
 
 
-def test_protected_routes_require_basic_auth(anonymous_client):
+def test_protected_html_routes_redirect_to_login(anonymous_client):
     response = anonymous_client.get("/app")
-    assert response.status_code == 401
-    assert response.headers["www-authenticate"] == "Basic"
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login?next=/app"
 
 
 def test_wrong_basic_auth_is_rejected(anonymous_client):
@@ -49,6 +49,32 @@ def test_health_is_public(anonymous_client):
     response = anonymous_client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"ok": True}
+
+
+def test_login_page_renders(anonymous_client):
+    response = anonymous_client.get("/login")
+    assert response.status_code == 200
+    assert "Precise Automator" in response.text
+    assert 'name="username"' in response.text
+
+
+def test_login_form_sets_session_cookie_and_redirects(anonymous_client):
+    response = anonymous_client.post(
+        "/login",
+        data={"username": "test-user", "password": "test-password", "next": "/app"},
+    )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/app"
+    assert "precise_automator_session=" in response.headers["set-cookie"]
+
+
+def test_login_form_rejects_bad_credentials(anonymous_client):
+    response = anonymous_client.post(
+        "/login",
+        data={"username": "test-user", "password": "bad-password", "next": "/app"},
+    )
+    assert response.status_code == 401
+    assert "Invalid username or password" in response.text
 
 
 def test_dashboard_renders_empty_state_when_no_campaigns(client):
