@@ -7,9 +7,11 @@ Anthropic APIs.
 """
 
 import pytest
+import httpx
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.routes import campaigns
 from app import store
 
 
@@ -207,6 +209,120 @@ def test_syncing_campaign_detail_includes_status_polling(client):
 
     assert response.status_code == 200
     assert f"/api/campaigns/{doc['_id']}/status" in response.text
+
+
+class FakeSmartleadLifecycle:
+    def __init__(self, *, delete_error: httpx.HTTPStatusError | None = None, archive_error: httpx.HTTPStatusError | None = None):
+        self.delete_error = delete_error
+        self.archive_error = archive_error
+
+    async def delete_campaign(self, campaign_id: int) -> dict:
+        if self.delete_error:
+            raise self.delete_error
+        return {"ok": True, "deleted_id": campaign_id}
+
+    async def archive_campaign(self, campaign_id: int) -> dict:
+        if self.archive_error:
+            raise self.archive_error
+        return {"ok": True, "archived_id": campaign_id}
+
+
+def _smartlead_http_error(status_code: int, body: str = "") -> httpx.HTTPStatusError:
+    request = httpx.Request("DELETE", "https://server.smartlead.ai/api/v1/campaigns/123?api_key=secret")
+    response = httpx.Response(status_code, request=request, text=body)
+    return httpx.HTTPStatusError("smartlead error", request=request, response=response)
+
+
+def test_delete_removes_local_doc_when_smartlead_delete_succeeds(client, monkeypatch):
+    doc = store.insert_campaign(
+        workspace_key="preciselead",
+        campaign_name="Delete Success",
+        raw_input={"workspace_key": "preciselead", "campaign_name": "Delete Success", "parsed_messaging": {}},
+        plan={},
+        validation_errors=[],
+    )
+    campaign_id = str(doc["_id"])
+    store.attach_smartlead(campaign_id, 123)
+    monkeypatch.setattr(campaigns, "_smartlead_for_doc", lambda doc: FakeSmartleadLifecycle())
+
+    response = client.post(f"/api/campaigns/{campaign_id}/smartlead/delete")
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    assert store.get_campaign(campaign_id) is None
+
+
+def test_delete_removes_local_doc_when_smartlead_campaign_is_already_gone(client, monkeypatch):
+    doc = store.insert_campaign(
+        workspace_key="preciselead",
+        campaign_name="Delete Already Gone",
+        raw_input={"workspace_key": "preciselead", "campaign_name": "Delete Already Gone", "parsed_messaging": {}},
+        plan={},
+        validation_errors=[],
+    )
+    campaign_id = str(doc["_id"])
+    store.attach_smartlead(campaign_id, 123)
+    monkeypatch.setattr(
+        campaigns,
+        "_smartlead_for_doc",
+        lambda doc: FakeSmartleadLifecycle(delete_error=_smartlead_http_error(404, "not found")),
+    )
+
+    response = client.post(f"/api/campaigns/{campaign_id}/smartlead/delete")
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    assert "already missing" in response.json()["note"]
+    assert store.get_campaign(campaign_id) is None
+
+
+def test_delete_smartlead_error_marks_failed_instead_of_500(client, monkeypatch):
+    doc = store.insert_campaign(
+        workspace_key="preciselead",
+        campaign_name="Delete Failure",
+        raw_input={"workspace_key": "preciselead", "campaign_name": "Delete Failure", "parsed_messaging": {}},
+        plan={},
+        validation_errors=[],
+    )
+    campaign_id = str(doc["_id"])
+    store.attach_smartlead(campaign_id, 123)
+    monkeypatch.setattr(
+        campaigns,
+        "_smartlead_for_doc",
+        lambda doc: FakeSmartleadLifecycle(delete_error=_smartlead_http_error(500, "server failed")),
+    )
+
+    response = client.post(f"/api/campaigns/{campaign_id}/smartlead/delete")
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is False
+    refreshed = store.get_campaign(campaign_id)
+    assert refreshed["status"] == "failed"
+    assert "HTTP 500" in refreshed["last_sync_error"]
+    assert "api_key" not in refreshed["last_sync_error"]
+
+
+def test_archive_removes_local_doc_when_smartlead_campaign_is_already_gone(client, monkeypatch):
+    doc = store.insert_campaign(
+        workspace_key="preciselead",
+        campaign_name="Archive Already Gone",
+        raw_input={"workspace_key": "preciselead", "campaign_name": "Archive Already Gone", "parsed_messaging": {}},
+        plan={},
+        validation_errors=[],
+    )
+    campaign_id = str(doc["_id"])
+    store.attach_smartlead(campaign_id, 123)
+    monkeypatch.setattr(
+        campaigns,
+        "_smartlead_for_doc",
+        lambda doc: FakeSmartleadLifecycle(archive_error=_smartlead_http_error(404, "not found")),
+    )
+
+    response = client.post(f"/api/campaigns/{campaign_id}/smartlead/archive")
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    assert store.get_campaign(campaign_id) is None
 
 
 # ---- Sync gating ---- #

@@ -316,7 +316,30 @@ async def smartlead_analytics(
 async def archive_smartlead_campaign(campaign_id: str, request: Request):
     doc = _require_campaign(campaign_id)
     smartlead_id = _require_smartlead_id(doc)
-    response = await _smartlead_for_doc(doc).archive_campaign(smartlead_id)
+    try:
+        response = await _smartlead_for_doc(doc).archive_campaign(smartlead_id)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            store.delete_campaign(campaign_id)
+            return _redirect_after_delete(
+                request,
+                {
+                    "ok": True,
+                    "mode": "archive",
+                    "smartlead_campaign_id": smartlead_id,
+                    "note": "Smartlead campaign was already missing; local record removed.",
+                },
+            )
+        store.mark_sync_failed(campaign_id, _smartlead_http_error("Archive campaign", exc))
+        return _redirect_to_detail(
+            request,
+            campaign_id,
+            {"ok": False, "mode": "archive", "smartlead_campaign_id": smartlead_id, "error": _smartlead_http_error("Archive campaign", exc)},
+        )
+    store.campaigns_collection().update_one(
+        {"_id": doc["_id"]},
+        {"$set": {"status": "archived", "updated_at": store.now_utc()}},
+    )
     return _redirect_to_detail(
         request,
         campaign_id,
@@ -328,10 +351,29 @@ async def archive_smartlead_campaign(campaign_id: str, request: Request):
 async def delete_smartlead_campaign(campaign_id: str, request: Request):
     doc = _require_campaign(campaign_id)
     smartlead_id = _require_smartlead_id(doc)
-    response = await _smartlead_for_doc(doc).delete_campaign(smartlead_id)
-    return _redirect_to_detail(
+    try:
+        response = await _smartlead_for_doc(doc).delete_campaign(smartlead_id)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            store.delete_campaign(campaign_id)
+            return _redirect_after_delete(
+                request,
+                {
+                    "ok": True,
+                    "mode": "delete",
+                    "smartlead_campaign_id": smartlead_id,
+                    "note": "Smartlead campaign was already missing; local record removed.",
+                },
+            )
+        store.mark_sync_failed(campaign_id, _smartlead_http_error("Delete campaign", exc))
+        return _redirect_to_detail(
+            request,
+            campaign_id,
+            {"ok": False, "mode": "delete", "smartlead_campaign_id": smartlead_id, "error": _smartlead_http_error("Delete campaign", exc)},
+        )
+    store.delete_campaign(campaign_id)
+    return _redirect_after_delete(
         request,
-        campaign_id,
         {"ok": True, "mode": "delete", "smartlead_campaign_id": smartlead_id, "response": response},
     )
 
@@ -421,6 +463,12 @@ def _wants_html(request: Request) -> bool:
 def _redirect_to_detail(request: Request, campaign_id: str, payload: dict):
     if _wants_html(request):
         return RedirectResponse(f"/campaigns/{campaign_id}", status_code=303)
+    return payload
+
+
+def _redirect_after_delete(request: Request, payload: dict):
+    if _wants_html(request):
+        return RedirectResponse("/app", status_code=303)
     return payload
 
 
