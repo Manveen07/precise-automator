@@ -13,3 +13,4 @@ Thumbs.db
 dist/
 build/
 node_modules/
+debug_anthropic/

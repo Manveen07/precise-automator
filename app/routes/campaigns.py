@@ -14,9 +14,12 @@ place (settings, schedule, sequences) — never creates a duplicate.
 from collections.abc import Awaitable, Callable
 from datetime import date, timedelta
 from json import JSONDecodeError
+import logging
 import re
 
 from anthropic import AnthropicError
+
+_log = logging.getLogger("app.routes.campaigns")
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, Request, UploadFile
 import httpx
 from fastapi.responses import RedirectResponse
@@ -161,18 +164,23 @@ def revise_plan(
             template_prompt=_default_template_prompt(),
             examples=_default_template_examples(),
         )
-    except JSONDecodeError:
+    except JSONDecodeError as exc:
+        _log.exception("Revise: Claude returned non-JSON response (campaign=%s, instruction=%r): %s",
+                       campaign_id, revision_instruction, exc)
         return _redirect_to_detail(
             request,
             campaign_id,
             {"ok": False, "errors": ["Claude returned invalid JSON; plan unchanged."]},
         )
     except AnthropicError as exc:
+        _log.exception("Revise: Anthropic API error (campaign=%s, instruction=%r): %s",
+                       campaign_id, revision_instruction, exc)
         return _redirect_to_detail(
             request,
             campaign_id,
             {"ok": False, "errors": [f"Claude revision failed: {exc.__class__.__name__}; plan unchanged."]},
         )
+    _log.info("Revise: success (campaign=%s, instruction=%r)", campaign_id, revision_instruction)
     errors = validate_campaign_plan(plan, _active_workspace_keys())
     store.update_plan(campaign_id, plan, errors)
     return _redirect_to_detail(request, campaign_id, {"ok": True, "errors": errors})
