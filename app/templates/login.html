@@ -8,9 +8,13 @@
   </head>
   <body class="login-page">
     <main class="login-shell">
+      <div class="login-brand">
+        <span class="login-brand-mark">PA</span>
+        <span>Precise Automator</span>
+      </div>
       <section class="login-panel">
-        <h1>Precise Automator</h1>
-        <p class="muted">Sign in to create and update Smartlead campaign drafts.</p>
+        <h1>Welcome back</h1>
+        <p class="muted">Sign in to create and update Smartlead campaigns.</p>
         {% if error %}
         <div class="notice error">{{ error }}</div>
         {% endif %}
@@ -22,9 +26,10 @@
           <label>Password
             <input name="password" type="password" autocomplete="current-password" required>
           </label>
-          <button type="submit">Login</button>
+          <button type="submit">Sign in</button>
         </form>
       </section>
+      <p class="login-footnote">Internal tool. Access is provisioned by your team.</p>
     </main>
   </body>
 </html>
