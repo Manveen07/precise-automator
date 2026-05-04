@@ -9,6 +9,7 @@ No separate drafts/runs/steps tables: revising a plan overwrites
 from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from bson import ObjectId
 from pymongo import MongoClient
@@ -16,6 +17,21 @@ from pymongo.collection import Collection
 from pymongo.database import Database
 
 from app.config import settings
+
+DISPLAY_TZ = ZoneInfo("Asia/Kolkata")
+
+
+def to_display_tz(value: datetime | None) -> datetime | None:
+    """Convert a stored timestamp to the display timezone for the UI.
+
+    Mongo strips tzinfo on reads, so naive datetimes are assumed UTC
+    (which is how we write them via now_utc()).
+    """
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(DISPLAY_TZ)
 
 
 @lru_cache

@@ -34,7 +34,7 @@
           {% endif %}
         </td>
         <td>{{ campaign.workspace }}</td>
-        <td class="muted">{% if campaign.updated_at %}{{ campaign.updated_at.strftime("%Y-%m-%d %H:%M") }}{% else %}-{% endif %}</td>
+        <td class="muted">{% if campaign.updated_at %}{{ campaign.updated_at.strftime("%Y-%m-%d %H:%M IST") }}{% else %}-{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>

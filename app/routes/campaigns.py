@@ -83,7 +83,7 @@ def campaign_status(campaign_id: str) -> dict:
         "status_label": _status_label(doc.get("status", "drafting")),
         "smartlead_campaign_id": doc.get("smartlead_campaign_id"),
         "last_sync_error": doc.get("last_sync_error"),
-        "updated_at": doc.get("updated_at").isoformat() if doc.get("updated_at") else None,
+        "updated_at": store.to_display_tz(doc.get("updated_at")).isoformat() if doc.get("updated_at") else None,
     }
 
 
@@ -448,7 +448,7 @@ def _dashboard_row(doc: dict) -> dict:
         "smartlead_id": doc.get("smartlead_campaign_id"),
         "smartlead_state": "Synced to Smartlead" if doc.get("smartlead_campaign_id") else "Not synced",
         "workspace": workspace["name"],
-        "updated_at": doc.get("updated_at"),
+        "updated_at": store.to_display_tz(doc.get("updated_at")),
         "last_sync_error": doc.get("last_sync_error"),
     }
 
@@ -474,8 +474,8 @@ def _detail_payload(doc: dict) -> dict:
         "smartlead_campaign_id": doc.get("smartlead_campaign_id"),
         "last_sync_error": doc.get("last_sync_error"),
         "spintax_status": spintax_status,
-        "synced_at": doc.get("synced_at"),
-        "updated_at": doc.get("updated_at"),
+        "synced_at": store.to_display_tz(doc.get("synced_at")),
+        "updated_at": store.to_display_tz(doc.get("updated_at")),
     }
 
 
