@@ -81,7 +81,7 @@ p { margin: 0; }
 
 .nav-links {
   display: flex;
-  gap: 20px;
+  gap: 22px;
   align-items: center;
 }
 
@@ -89,24 +89,42 @@ p { margin: 0; }
   color: var(--ink-soft);
   font-size: 14px;
   font-weight: 500;
+  transition: color 120ms ease;
+}
+
+.nav-links a:hover {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.nav-divider {
+  display: inline-block;
+  width: 1px;
+  height: 18px;
+  background: var(--border-strong);
 }
 
 .logout-form { margin: 0; }
 
 .logout-form button {
   background: transparent;
-  border: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
   color: var(--ink-soft);
   cursor: pointer;
   font: inherit;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
-  padding: 0;
+  min-height: 0;
+  padding: 6px 12px;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
 }
 
 .logout-form button:hover {
-  color: var(--accent-dark);
-  text-decoration: underline;
+  background: var(--bg-soft);
+  border-color: var(--border-strong);
+  color: var(--ink);
+  text-decoration: none;
 }
 
 .login-page {
@@ -524,16 +542,13 @@ th {
 }
 
 .notice.warning {
-  background: #fef3c7;
-  border-left: 3px solid #d97706;
-  padding: 0.75rem 1rem;
-  border-radius: 4px;
-  margin-bottom: 1rem;
+  background: var(--amber-soft);
+  color: var(--amber);
+  border: 1px solid transparent;
 }
 
-.notice.warning p {
-  margin: 0.25rem 0 0;
-  font-size: 0.875rem;
+.notice.warning strong {
+  color: var(--amber);
 }
 
 .notice p { margin: 0; }
