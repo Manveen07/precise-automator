@@ -119,6 +119,9 @@ class SmartleadService:
     async def update_status(self, campaign_id: int, status: str) -> dict:
         return await self.patch(f"campaigns/{campaign_id}/status", {"status": status})
 
+    async def set_campaign_status(self, campaign_id: int, status: str) -> dict:
+        return await self.post(f"campaigns/{campaign_id}/status", {"status": status})
+
     async def delete_campaign(self, campaign_id: int) -> dict:
         return await self.delete(f"campaigns/{campaign_id}")
 

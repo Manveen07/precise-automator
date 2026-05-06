@@ -47,6 +47,11 @@ FastAPI `BackgroundTasks`.
 | `SMARTLEAD_BELARDI_WONG_API_KEY` | API key for Belardi Wong |
 | `SMARTLEAD_DARLEAN_API_KEY` | API key for Darlean |
 | `APP_BASE_URL` | Public app URL used in deployment metadata |
+| `SMARTLEAD_WEBHOOK_SECRET` | Shared secret for Smartlead monitor webhooks |
+| `SLACK_BOT_TOKEN` | Slack bot token for monitor alerts and action menus |
+| `SLACK_SIGNING_SECRET` | Slack signing secret for action verification |
+| `SLACK_CHANNEL_ID` | Slack channel for campaign pause alerts |
+| `BOUNCE_PROTECTION_THRESHOLD` | Bounce pause threshold; default `0.03` |
 
 For PreciseLead campaigns, Smartlead agency client attribution is inferred from
 the campaign name and passed as `client_id` on `/campaigns/create`:
@@ -84,6 +89,29 @@ A campaign is a single Mongo document:
 
 Re-syncing an already-synced campaign updates the existing Smartlead campaign
 in place — never creates a duplicate.
+
+## Smartlead bounce monitor
+
+Precise Automator can also receive Smartlead status webhooks and alert Slack
+when a campaign is paused with bounce rates above the configured threshold.
+
+Smartlead webhook URL:
+
+```text
+https://YOUR-RENDER-URL/api/monitor/smartlead?secret=SMARTLEAD_WEBHOOK_SECRET
+```
+
+Slack interactivity URL for Resume Campaign actions:
+
+```text
+https://YOUR-RENDER-URL/api/monitor/slack/actions
+```
+
+The monitor classifies a pause as:
+
+- `confirmed_bounce_protection` when the webhook includes an explicit bounce reason.
+- `likely_bounce_protection` when status is `PAUSED` and analytics show bounce rate >= `BOUNCE_PROTECTION_THRESHOLD`.
+- `generic_pause` for other pauses.
 
 ## Tests
 

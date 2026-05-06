@@ -65,6 +65,11 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = "replace_me"
     ANTHROPIC_MODEL: str = "claude-sonnet-4-20250514"
     SLACK_WEBHOOK_URL: AnyHttpUrl | None = None
+    SLACK_BOT_TOKEN: str = ""
+    SLACK_SIGNING_SECRET: str = ""
+    SLACK_CHANNEL_ID: str = ""
+    SMARTLEAD_WEBHOOK_SECRET: str = ""
+    BOUNCE_PROTECTION_THRESHOLD: float = 0.03
     BLOCKED_PHRASES: list[str] = Field(default_factory=lambda: ["guaranteed", "risk-free"])
 
     @field_validator("SLACK_WEBHOOK_URL", mode="before")

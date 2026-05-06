@@ -53,8 +53,10 @@ def test_delete_archive_and_analytics_call_shapes():
         await service.get_campaign_performance("2026-04-01", "2026-04-27", campaign_ids=[123])
         await service.add_leads(123, [{"email": "lead@example.com"}])
         await service.get_clients()
+        await service.set_campaign_status(123, "ACTIVE")
 
         assert ("patch", "campaigns/123/status", {"status": "ARCHIVED"}) in service.calls
+        assert ("post", "campaigns/123/status", {"status": "ACTIVE"}) in service.calls
         assert ("delete", "campaigns/123", None) in service.calls
         assert ("get", "campaigns/123/analytics", None) in service.calls
         assert ("get", "campaigns/123/statistics", {"limit": 50, "offset": 10}) in service.calls
