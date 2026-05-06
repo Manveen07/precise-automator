@@ -76,6 +76,40 @@ def test_delete_archive_and_analytics_call_shapes():
     asyncio.run(run())
 
 
+def test_resume_campaign_tries_status_payload_variants_until_one_succeeds():
+    async def run():
+        class ResumeRecordingService(RecordingSmartleadService):
+            async def post(self, endpoint: str, payload: dict) -> dict:
+                self.calls.append(("post", endpoint, payload))
+                if payload == {"status": "START"}:
+                    return {"ok": True}
+                raise _smartlead_status_error(400, "bad status")
+
+            async def patch(self, endpoint: str, payload: dict) -> dict:
+                self.calls.append(("patch", endpoint, payload))
+                raise _smartlead_status_error(400, "bad status")
+
+        service = ResumeRecordingService()
+        response = await service.resume_campaign(123)
+
+        assert response == {"ok": True}
+        assert service.calls == [
+            ("post", "campaigns/123/status", {"status": "ACTIVE"}),
+            ("patch", "campaigns/123/status", {"status": "ACTIVE"}),
+            ("post", "campaigns/123/status", {"status": "START"}),
+        ]
+
+    asyncio.run(run())
+
+
+def _smartlead_status_error(status_code: int, body: str):
+    import httpx
+
+    request = httpx.Request("POST", "https://server.smartlead.ai/api/v1/campaigns/123/status?api_key=secret")
+    response = httpx.Response(status_code, request=request, text=body)
+    return httpx.HTTPStatusError("bad status", request=request, response=response)
+
+
 def test_url_includes_api_key_and_extra_query_params():
     service = SmartleadService("secret")
     assert (

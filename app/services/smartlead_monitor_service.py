@@ -70,7 +70,7 @@ async def classify_pause(
 
 
 async def resume_campaign(campaign_id: int, account: CampaignAccount) -> dict:
-    return await SmartleadService(account.api_key).set_campaign_status(campaign_id, "ACTIVE")
+    return await SmartleadService(account.api_key).resume_campaign(campaign_id)
 
 
 def explicit_pause_reason(payload: dict[str, Any]) -> str | None:

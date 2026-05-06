@@ -122,6 +122,33 @@ class SmartleadService:
     async def set_campaign_status(self, campaign_id: int, status: str) -> dict:
         return await self.post(f"campaigns/{campaign_id}/status", {"status": status})
 
+    async def resume_campaign(self, campaign_id: int) -> dict:
+        """Resume a paused Smartlead campaign.
+
+        Smartlead accounts/endpoints have not been consistent about accepting
+        `ACTIVE` vs `START`, or JSON key names. Try the least surprising
+        variants before surfacing a clear error back to Slack.
+        """
+        attempts = (
+            ("post", {"status": "ACTIVE"}),
+            ("patch", {"status": "ACTIVE"}),
+            ("post", {"status": "START"}),
+            ("patch", {"status": "START"}),
+            ("post", {"campaign_status": "ACTIVE"}),
+            ("patch", {"campaign_status": "ACTIVE"}),
+        )
+        errors = []
+        for method, payload in attempts:
+            try:
+                if method == "post":
+                    return await self.post(f"campaigns/{campaign_id}/status", payload)
+                return await self.patch(f"campaigns/{campaign_id}/status", payload)
+            except httpx.HTTPStatusError as exc:
+                body = (exc.response.text or "").strip()
+                errors.append(f"{method.upper()} {payload}: HTTP {exc.response.status_code} {body}")
+                continue
+        raise RuntimeError("; ".join(errors) or "Smartlead rejected every resume attempt")
+
     async def delete_campaign(self, campaign_id: int) -> dict:
         return await self.delete(f"campaigns/{campaign_id}")
 
