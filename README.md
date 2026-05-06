@@ -44,10 +44,21 @@ FastAPI `BackgroundTasks`.
 | `APP_PASSWORD` | HTTP Basic auth password |
 | `ANTHROPIC_API_KEY` | Required for AI revisions / spintax |
 | `SMARTLEAD_PRECISELEAD_API_KEY` | API key for the PreciseLead workspace |
-| `SMARTLEAD_PRECISELEAD_CLIENT_ID` | Optional numeric override for PreciseLead; if blank, the app tries to fetch Smartlead clients and match `PreciseLead` by name. If the API key is client-scoped and cannot list clients, campaign creation omits `client_id` so Smartlead uses the key's default client. |
 | `SMARTLEAD_BELARDI_WONG_API_KEY` | API key for Belardi Wong |
 | `SMARTLEAD_DARLEAN_API_KEY` | API key for Darlean |
 | `APP_BASE_URL` | Public app URL used in deployment metadata |
+
+For PreciseLead campaigns, Smartlead agency client attribution is inferred from
+the campaign name and passed as `client_id` on `/campaigns/create`:
+
+| Campaign name contains | Smartlead client |
+|---|---|
+| `Melior` | Ryan Markman / Melior (`12256`) |
+| `OSC`, `Staff AI`, `SVSG`, `Sri` | Srivatsan / SVSG (`145916`) |
+| `Avenge`, `Avench` | Anuroop / Avench (`88657`) |
+
+If none of those aliases match, campaign creation omits `client_id`, leaving the
+campaign under PreciseLeads itself.
 
 ## Data model
 
@@ -58,6 +69,7 @@ A campaign is a single Mongo document:
   _id: ObjectId,
   smartlead_campaign_id: int | null,    // populated after first sync
   smartlead_workspace: "preciselead" | "belardi_wong" | "darlean",
+  smartlead_client_id: int | null,      // inferred from campaign name for PreciseLead agency clients
   campaign_name: "...",
   raw_input: { ... },                   // original input + parsed messaging
   current_plan: { ... },                // CampaignPlan JSON

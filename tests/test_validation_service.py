@@ -58,6 +58,15 @@ def test_missing_step_one_is_rejected():
     assert any("sequence must include Step 1" in error for error in validate_campaign_plan(plan, {"smartlead_mcp"}))
 
 
+def test_schema_validation_errors_are_human_readable():
+    plan = valid_plan()
+    plan["sequence"] = []
+
+    errors = validate_campaign_plan(plan, {"smartlead_mcp"})
+
+    assert errors == ["sequence: sequence needs at least one step"]
+
+
 def test_schedule_hours_are_parsed_not_string_compared():
     plan = valid_plan()
     plan["schedule"]["start_hour"] = "9:00"

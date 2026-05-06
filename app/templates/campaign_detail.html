@@ -20,10 +20,14 @@
       <strong class="summary-value">
         {% if campaign.validation_errors %}
         <span class="badge status-failed">{{ campaign.validation_errors | length }} validation error(s)</span>
-        {% elif campaign.plan %}
+        {% elif campaign.has_local_plan %}
         <span class="badge status-ready">valid</span>
-        {% else %}<span class="muted">none</span>{% endif %}
+        {% else %}<span class="muted">{% if campaign.smartlead_campaign_id %}not loaded{% else %}none{% endif %}</span>{% endif %}
       </strong>
+    </div>
+    <div>
+      <span class="eyebrow">Client</span>
+      <strong class="summary-value">{{ campaign.smartlead_client.label }}</strong>
     </div>
     <div>
       <span class="eyebrow">Smartlead</span>
@@ -49,6 +53,13 @@
 
 <section class="panel">
   <div class="section-heading"><h2>Next Action</h2></div>
+  {% if not campaign.has_local_plan and campaign.smartlead_campaign_id %}
+  <p class="section-lead">This Smartlead campaign is linked. Inspect or review analytics from Smartlead.</p>
+  <div class="action-row">
+    <a class="button secondary" href="/api/campaigns/{{ campaign.id }}/smartlead">Inspect</a>
+    <a class="button secondary" href="/api/campaigns/{{ campaign.id }}/analytics">Analytics</a>
+  </div>
+  {% else %}
   <p class="section-lead">Sync the current plan to Smartlead. If the campaign has already been synced, this updates the existing Smartlead campaign.</p>
   <div class="action-row">
     {% if campaign.status == "syncing" %}
@@ -64,9 +75,10 @@
     </form>
     {% endif %}
   </div>
+  {% endif %}
 </section>
 
-{% if campaign.plan %}
+{% if campaign.has_local_plan %}
 <section class="panel">
   <div class="section-heading">
     <h2>Plan Preview</h2>
@@ -176,40 +188,41 @@
     <span class="badge">ID {{ campaign.smartlead_campaign_id }}</span>
     {% endif %}
   </div>
-  <p class="section-lead">Sync, inspect, or edit an existing Smartlead campaign using the current plan.</p>
-
-  <form method="post" action="/api/campaigns/{{ campaign.id }}/smartlead/link" class="target-form">
-    <label>Use Existing Smartlead Campaign
-      <input
-        name="smartlead_campaign_ref"
-        placeholder="Paste Smartlead campaign link or ID"
-        autocomplete="off"
-      >
-    </label>
-    <button type="submit" class="secondary">Use as Edit Target</button>
-  </form>
-
   {% if campaign.smartlead_campaign_id %}
-  <hr class="divider">
-  <details class="clean-details">
-    <summary>Smartlead Actions</summary>
-    <div class="action-row">
-      <a class="button secondary" href="/api/campaigns/{{ campaign.id }}/smartlead">Inspect</a>
-      <a class="button secondary" href="/api/campaigns/{{ campaign.id }}/analytics">Analytics</a>
-      <span class="spacer"></span>
-      <form method="post" action="/api/campaigns/{{ campaign.id }}/smartlead/archive" class="js-single-submit">
-        <button type="submit" class="secondary">Archive</button>
-      </form>
-      <form method="post" action="/api/campaigns/{{ campaign.id }}/smartlead/delete" class="js-single-submit" onsubmit="return confirm('Permanently delete this Smartlead campaign and associated data?');">
-        <button type="submit" class="danger">Delete</button>
-      </form>
-    </div>
-  </details>
+  <p class="section-lead">Inspect, analyze, archive, or delete the linked Smartlead campaign.</p>
+  <div class="action-row">
+    <a class="button secondary" href="/api/campaigns/{{ campaign.id }}/smartlead">Inspect</a>
+    <a class="button secondary" href="/api/campaigns/{{ campaign.id }}/analytics">Analytics</a>
+    <span class="spacer"></span>
+    <form method="post" action="/api/campaigns/{{ campaign.id }}/smartlead/archive" class="js-single-submit">
+      <button type="submit" class="secondary">Archive</button>
+    </form>
+    <form method="post" action="/api/campaigns/{{ campaign.id }}/smartlead/delete" class="js-single-submit" onsubmit="return confirm('Permanently delete this Smartlead campaign and associated data?');">
+      <button type="submit" class="danger">Delete</button>
+    </form>
+  </div>
   {% else %}
-  <p class="muted">No Smartlead campaign linked yet. Click <strong>Sync to Smartlead</strong> above or paste an existing Smartlead link.</p>
+  <p class="muted">No Smartlead campaign linked yet. Sync the plan above to create one, or start from an existing Smartlead link on the New Campaign page.</p>
   {% endif %}
 </section>
 
+<section class="panel">
+  <div class="section-heading">
+    <h2>Local Record</h2>
+  </div>
+  <p class="section-lead">
+    {% if campaign.smartlead_campaign_id %}
+    Remove this app record without deleting Smartlead campaign ID {{ campaign.smartlead_campaign_id }}.
+    {% else %}
+    Delete this local draft from the dashboard.
+    {% endif %}
+  </p>
+  <form method="post" action="/api/campaigns/{{ campaign.id }}/local-delete" class="js-single-submit" onsubmit="return confirm('{% if campaign.smartlead_campaign_id %}Remove only the local record? The Smartlead campaign will not be deleted.{% else %}Delete this local draft?{% endif %}');">
+    <button type="submit" class="danger">{% if campaign.smartlead_campaign_id %}Remove Local Record{% else %}Delete Local Draft{% endif %}</button>
+  </form>
+</section>
+
+{% if campaign.raw_input.messaging_text %}
 <section class="panel">
   <div class="section-heading"><h2>Parsed Messaging</h2></div>
   <p class="section-lead">Raw parser output from the uploaded file or pasted text.</p>
@@ -228,6 +241,7 @@
     <pre>{{ campaign.raw_input.parsed_messaging | tojson(indent=2) }}</pre>
   </details>
 </section>
+{% endif %}
 {% endblock %}
 {% block scripts %}
 {% if campaign.status == "syncing" %}

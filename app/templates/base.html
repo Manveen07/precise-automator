@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Precise Automator{% endblock %}</title>
     <link rel="stylesheet" href="/static/styles.css">
+    <meta name="csrf-token" content="{{ request.cookies.get('precise_automator_session', '') }}">
   </head>
   <body>
     <header class="topbar">
@@ -15,6 +16,7 @@
           <a href="/campaigns/new">New Campaign</a>
           <span class="nav-divider" aria-hidden="true"></span>
           <form method="post" action="/logout" class="logout-form">
+            <input type="hidden" name="csrf_token" value="{{ request.cookies.get('precise_automator_session', '') }}">
             <button type="submit">Sign out</button>
           </form>
         </nav>
@@ -27,10 +29,21 @@
     <script>
       document.addEventListener("submit", (event) => {
         const form = event.target;
+        if (form instanceof HTMLFormElement && form.method.toLowerCase() === "post" && !form.querySelector("input[name=csrf_token]")) {
+          const token = document.querySelector("meta[name=csrf-token]")?.getAttribute("content") || "";
+          if (token) {
+            const input = document.createElement("input");
+            input.type = "hidden";
+            input.name = "csrf_token";
+            input.value = token;
+            form.appendChild(input);
+          }
+        }
         if (!(form instanceof HTMLFormElement) || !form.classList.contains("js-single-submit")) return;
         const button = form.querySelector("button[type=submit], button:not([type])");
         if (!button) return;
         button.disabled = true;
+        if (button.classList.contains("icon-button")) return;
         button.dataset.originalText = button.textContent;
         button.textContent = "Working...";
       });

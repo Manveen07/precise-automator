@@ -1,20 +1,8 @@
 import httpx
 import pytest
 
-from app.workers.sync_campaign import _client_name_key, _error_text, _extract_campaign_id, _resolve_client_id
-
-
-class FakeSmartlead:
-    def __init__(self, clients, error=None):
-        self.clients = clients
-        self.error = error
-        self.get_clients_called = False
-
-    async def get_clients(self):
-        self.get_clients_called = True
-        if self.error:
-            raise self.error
-        return {"ok": True, "data": self.clients}
+from app.config import infer_smartlead_client
+from app.workers.sync_campaign import _error_text, _extract_campaign_id, _resolve_client_id
 
 
 def test_extract_campaign_id_accepts_top_level_and_wrapped_responses():
@@ -50,69 +38,44 @@ def test_error_text_handles_non_http_exceptions():
     assert "boom" in text
 
 
-def test_client_name_key_normalizes_spacing_and_case():
-    assert _client_name_key("Precise Lead") == _client_name_key("preciselead")
+@pytest.mark.parametrize(
+    ("campaign_name", "expected_client_id"),
+    [
+        ("Melior - Q2 outbound", 12256),
+        ("OSC benchmark", 145916),
+        ("Staff AI follow-up", 145916),
+        ("SVSG net-new", 145916),
+        ("Sri reactivation", 145916),
+        ("Avenge pilot", 88657),
+        ("Avench sequence", 88657),
+    ],
+)
+def test_infer_smartlead_client_from_campaign_name(campaign_name, expected_client_id):
+    assert infer_smartlead_client("preciselead", campaign_name)["client_id"] == expected_client_id
 
 
-def test_resolve_client_id_uses_env_override_without_fetching_clients():
-    async def run():
-        smartlead = FakeSmartlead([{"id": 999, "name": "PreciseLead"}])
-        client_id = await _resolve_client_id(
-            smartlead,
-            {"client_id": 123, "client_name": "PreciseLead"},
-        )
-        assert client_id == 123
-        assert smartlead.get_clients_called is False
-
-    import asyncio
-
-    asyncio.run(run())
+def test_infer_smartlead_client_returns_none_for_preciseleads_self_campaign():
+    assert infer_smartlead_client("preciselead", "PreciseLeads internal campaign") is None
 
 
-def test_resolve_client_id_fetches_by_normalized_client_name():
-    async def run():
-        smartlead = FakeSmartlead([{"id": "456", "name": "Precise Lead"}])
-        client_id = await _resolve_client_id(
-            smartlead,
-            {"client_id": None, "client_name": "PreciseLead"},
-        )
-        assert client_id == 456
-        assert smartlead.get_clients_called is True
-
-    import asyncio
-
-    asyncio.run(run())
+def test_resolve_client_id_uses_stored_campaign_client():
+    client_id = _resolve_client_id(
+        {"smartlead_client_id": "12256", "smartlead_client_name": "Ryan Markman / Melior"},
+        {"key": "preciselead"},
+    )
+    assert client_id == 12256
 
 
-def test_resolve_client_id_fails_clear_when_name_not_found():
-    async def run():
-        smartlead = FakeSmartlead([{"id": 456, "name": "Other Client"}])
-        with pytest.raises(RuntimeError, match="PreciseLead.*not found"):
-            await _resolve_client_id(
-                smartlead,
-                {"client_id": None, "client_name": "PreciseLead"},
-            )
-
-    import asyncio
-
-    asyncio.run(run())
+def test_resolve_client_id_infers_for_older_docs_without_stored_client():
+    client_id = _resolve_client_id({"campaign_name": "Staff AI - April"}, {"key": "preciselead"})
+    assert client_id == 145916
 
 
-def test_resolve_client_id_falls_back_when_client_list_is_unauthorized():
-    async def run():
-        request = httpx.Request("GET", "https://server.smartlead.ai/api/v1/client/?api_key=secret")
-        response = httpx.Response(401, request=request)
-        smartlead = FakeSmartlead(
-            [],
-            httpx.HTTPStatusError("unauthorized", request=request, response=response),
-        )
-        client_id = await _resolve_client_id(
-            smartlead,
-            {"client_id": None, "client_name": "PreciseLead"},
-        )
-        assert client_id is None
-        assert smartlead.get_clients_called is True
+def test_resolve_client_id_returns_none_when_campaign_has_no_client_match():
+    client_id = _resolve_client_id({"campaign_name": "PreciseLeads internal"}, {"key": "preciselead"})
+    assert client_id is None
 
-    import asyncio
 
-    asyncio.run(run())
+def test_resolve_client_id_rejects_invalid_stored_client_id():
+    with pytest.raises(RuntimeError, match="stored Smartlead client.*invalid id"):
+        _resolve_client_id({"smartlead_client_id": "not-a-number"}, {"key": "preciselead"})

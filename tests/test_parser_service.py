@@ -6,6 +6,76 @@ def test_extract_subjects_from_numbered_lines():
     assert extract_subjects(text) == ["quick thought for {{company_name}}", "idea for {{company}}"]
 
 
+def test_parse_email_sections_without_subject_heading():
+    text = """
+1. Quick test
+
+Email 1
+V1
+Hi {{first_name}},
+1. This numbered body line is not a subject.
+%Signature%
+
+Email 2
+Bumping this up.
+"""
+    parsed = parse_messaging_file(text)
+
+    assert parsed["source_format"] == "email_sections"
+    assert parsed["subjects"] == ["Quick test"]
+    assert [step["step_number"] for step in parsed["steps"]] == [1, 2]
+    assert parsed["steps"][0]["body_variants"][0]["body"].startswith("Hi {{first_name}}")
+    assert parsed["steps"][1]["body_variants"][0]["body"] == "Bumping this up."
+
+
+def test_parse_email_and_version_hash_headings():
+    text = """
+Round Table Offer
+
+Audience: CEO/Partners/Owners from:
+1. Chemicals -> Chemicals
+2. Logistics -> Logistics
+
+Subject Line Options :
+1. Panel Discussion Invitation
+
+Email#1
+
+Version#1
+Plain copy ignored.
+
+Spintax
+Hi {{first_name}},
+Version one body.
+%Signature%
+
+Version#2
+Plain copy ignored.
+
+Spintax
+Hi {{first_name}},
+Version two body.
+%Signature%
+
+Email#2
+
+Version#1
+Spintax
+Bumping this up.
+%Signature%
+"""
+    parsed = parse_messaging_file(text)
+
+    assert parsed["source_format"] == "repository"
+    assert parsed["selected_campaign"] == "Round Table Offer"
+    assert parsed["subjects"] == ["Panel Discussion Invitation"]
+    assert [step["step_number"] for step in parsed["steps"]] == [1, 2]
+    assert len(parsed["steps"][0]["body_variants"]) == 2
+    assert "Version one body" in parsed["steps"][0]["body_variants"][0]["body"]
+    assert "Version two body" in parsed["steps"][0]["body_variants"][1]["body"]
+    assert parsed["steps"][1]["body_variants"][0]["body"].startswith("Bumping this up.")
+
+
 def test_parse_steps_variants_and_spintax_copy():
     text = """
 1. subject one

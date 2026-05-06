@@ -25,8 +25,6 @@ services:
         value: claude-sonnet-4-20250514
       - key: SMARTLEAD_PRECISELEAD_API_KEY
         sync: false
-      - key: SMARTLEAD_PRECISELEAD_CLIENT_ID
-        sync: false
       - key: SMARTLEAD_BELARDI_WONG_API_KEY
         sync: false
       - key: SMARTLEAD_DARLEAN_API_KEY

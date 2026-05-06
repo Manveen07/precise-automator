@@ -4,7 +4,7 @@
 <div class="page-heading">
   <div>
     <h1>{{ title }}</h1>
-    <p class="muted">Smartlead ID {{ payload.smartlead_campaign_id }} for {{ campaign.raw_input_json.get("campaign_name", "Untitled campaign") }}</p>
+    <p class="muted">Smartlead ID {{ payload.smartlead_campaign_id }} for {{ campaign.campaign_name }}</p>
   </div>
   <div class="header-actions">
     <a class="button secondary" href="/campaigns/{{ campaign.id }}">Back to Campaign</a>

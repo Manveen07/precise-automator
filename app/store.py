@@ -78,13 +78,21 @@ def insert_campaign(
     raw_input: dict,
     plan: dict,
     validation_errors: list[str],
+    smartlead_campaign_id: int | None = None,
+    smartlead_client_id: int | None = None,
+    smartlead_client_name: str | None = None,
+    smartlead_client_match: str | None = None,
+    status: str | None = None,
     created_by: str | None = None,
 ) -> dict:
     now = now_utc()
-    status = "drafting" if validation_errors else "ready"
+    status = status or ("drafting" if validation_errors else "ready")
     doc = {
-        "smartlead_campaign_id": None,
+        "smartlead_campaign_id": smartlead_campaign_id,
         "smartlead_workspace": workspace_key,
+        "smartlead_client_id": smartlead_client_id,
+        "smartlead_client_name": smartlead_client_name,
+        "smartlead_client_match": smartlead_client_match,
         "campaign_name": campaign_name,
         "raw_input": raw_input,
         "current_plan": plan,

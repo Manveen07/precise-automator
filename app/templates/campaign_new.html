@@ -17,12 +17,24 @@
         {% endfor %}
       </select>
     </label>
-    <label>Campaign Name
-      <input id="campaign-name" name="campaign_name" required placeholder="e.g. Q2 Outbound — Series A SaaS">
+    <label>Campaign Name <span class="muted">(optional for existing Smartlead links)</span>
+      <input id="campaign-name" name="campaign_name" placeholder="e.g. Q2 Outbound - Series A SaaS">
     </label>
     <label>Max New Leads / Day
       <input name="max_new_leads_per_day" type="number" min="1" max="500" value="100">
     </label>
+  </div>
+
+  <div id="existing-smartlead-target" class="inline-panel">
+    <label>Existing Smartlead Campaign <span class="muted">(optional)</span>
+      <input
+        id="smartlead-campaign-ref"
+        name="smartlead_campaign_ref"
+        placeholder="Paste Smartlead campaign link or ID"
+        autocomplete="off"
+      >
+    </label>
+    <p class="muted">When set, sync updates this Smartlead campaign instead of creating a new draft.</p>
   </div>
 
   <hr class="divider">

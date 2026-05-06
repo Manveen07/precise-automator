@@ -5,7 +5,7 @@ Runs as a FastAPI BackgroundTask after `POST /api/campaigns/{id}/sync`.
 Steps:
   1. Load the campaign doc from Mongo.
   2. Re-validate the plan (defensive; route already checks).
-  3. Resolve the workspace API key + client_id from env.
+  3. Resolve the workspace API key and infer any Smartlead agency client_id.
   4. If no smartlead_campaign_id: create the Smartlead campaign.
      Else: update the existing one in place.
   5. Apply settings, schedule, sequences. Optionally attach email accounts.
@@ -21,7 +21,7 @@ import re
 
 import httpx
 
-from app.config import get_workspace_config
+from app.config import get_workspace_config, infer_smartlead_client
 from app.services.sequence_builder import build_smartlead_sequences
 from app.services.smartlead_service import SmartleadService
 from app.services.validation_service import validate_campaign_plan
@@ -60,7 +60,20 @@ async def _sync_campaign_async(campaign_id: str) -> None:
         if existing_smartlead_id:
             smartlead_id = existing_smartlead_id
         else:
-            client_id = await _resolve_client_id(smartlead, workspace)
+            smartlead_client = _resolve_smartlead_client(doc, workspace)
+            client_id = smartlead_client["client_id"] if smartlead_client else None
+            if smartlead_client and not doc.get("smartlead_client_id"):
+                store.campaigns_collection().update_one(
+                    {"_id": doc["_id"]},
+                    {
+                        "$set": {
+                            "smartlead_client_id": smartlead_client["client_id"],
+                            "smartlead_client_name": smartlead_client["name"],
+                            "smartlead_client_match": smartlead_client["matched_alias"],
+                            "updated_at": store.now_utc(),
+                        }
+                    },
+                )
             create_response = await smartlead.create_campaign(doc["campaign_name"], client_id)
             smartlead_id = _extract_campaign_id(create_response)
             store.campaigns_collection().update_one(
@@ -97,52 +110,37 @@ def _active_workspace_keys() -> set[str]:
     return {w["key"] for w in SMARTLEAD_WORKSPACES}
 
 
-async def _resolve_client_id(smartlead: SmartleadService, workspace: dict) -> int | None:
-    """Return explicit env client_id or find it by Smartlead client name.
+def _resolve_client_id(doc: dict, workspace: dict) -> int | None:
+    smartlead_client = _resolve_smartlead_client(doc, workspace)
+    return smartlead_client["client_id"] if smartlead_client else None
 
-    Smartlead's create campaign endpoint can omit client_id, but agency keys can
-    create under the wrong account if the intended client is not specified. For
-    workspaces with a configured client_name, fetch Smartlead clients and match
-    by normalized name. The env var remains an override.
+
+def _resolve_smartlead_client(doc: dict, workspace: dict) -> dict | None:
+    """Return the stored or inferred Smartlead agency client for campaign create.
+
+    None is intentional: campaigns with no matching client alias are created
+    without client_id and remain under the PreciseLeads/master workspace.
     """
-    if workspace.get("client_id"):
-        return workspace["client_id"]
+    client_id = doc.get("smartlead_client_id")
+    if client_id:
+        parsed_client_id = _parse_client_id(client_id, "stored Smartlead client")
+        return {
+            "client_id": parsed_client_id,
+            "name": doc.get("smartlead_client_name") or f"Client {parsed_client_id}",
+            "matched_alias": doc.get("smartlead_client_match"),
+        }
 
-    client_name = workspace.get("client_name")
-    if not client_name:
-        return None
+    return infer_smartlead_client(workspace["key"], doc.get("campaign_name", ""))
 
-    try:
-        response = await smartlead.get_clients()
-    except httpx.HTTPStatusError as exc:
-        if exc.response.status_code in {401, 403}:
-            return None
-        raise
-    clients = response.get("data", response) if isinstance(response, dict) else response
-    if not isinstance(clients, list):
-        raise RuntimeError("Smartlead client list response did not include a data list")
-    if not clients:
-        return None
 
-    expected = _client_name_key(client_name)
-    matches = [client for client in clients if _client_name_key(str(client.get("name", ""))) == expected]
-    if not matches:
-        raise RuntimeError(f"Smartlead client named '{client_name}' was not found")
-    if len(matches) > 1:
-        raise RuntimeError(f"Smartlead returned multiple clients named '{client_name}'")
-
-    client_id = matches[0].get("id")
+def _parse_client_id(client_id: object, label: str) -> int:
     try:
         parsed_client_id = int(client_id)
     except (TypeError, ValueError) as exc:
-        raise RuntimeError(f"Smartlead client '{client_name}' returned invalid id: {client_id}") from exc
+        raise RuntimeError(f"{label} returned invalid id: {client_id}") from exc
     if parsed_client_id <= 0:
-        raise RuntimeError(f"Smartlead client '{client_name}' returned invalid id: {client_id}")
+        raise RuntimeError(f"{label} returned invalid id: {client_id}")
     return parsed_client_id
-
-
-def _client_name_key(value: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "", value.lower())
 
 
 def _extract_campaign_id(response: dict) -> int:

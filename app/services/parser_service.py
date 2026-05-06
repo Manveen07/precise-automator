@@ -1,9 +1,9 @@
 import re
 
 SUBJECT_RE = re.compile(r"^\s*(\d+)\.\s+(.+?)\s*$", re.MULTILINE)
-STEP_RE = re.compile(r"(?im)^\s*Step\s+(\d+)\s*$")
-EMAIL_STEP_RE = re.compile(r"(?im)^\s*Email\s+(\d+)\s*$")
-VARIANT_RE = re.compile(r"(?im)^\s*V(\d+)\s*$")
+STEP_RE = re.compile(r"(?im)^\s*Step\s*#?\s*(\d+)\s*$")
+EMAIL_STEP_RE = re.compile(r"(?im)^\s*Email\s*#?\s*(\d+)\s*$")
+VARIANT_RE = re.compile(r"(?im)^\s*(?:V|Version)\s*#?\s*(\d+)\s*$")
 SPINTAX_RE = re.compile(r"(?im)^\s*(?:-+\s*)?Spintax(?:\s+Version)?(?:\s*-+)?\s*:?\s*$")
 SUBJECT_HEADING_RE = re.compile(r"(?im)^\s*Subject\s+Line(?:\s+Options?)?\s*:?\s*$")
 
@@ -49,6 +49,12 @@ def parse_messaging_file(text: str, selected_sequence_name: str | None = None) -
         }
 
     step_matches = list(STEP_RE.finditer(text))
+    if step_matches:
+        source_format = "step_sections"
+    else:
+        step_matches = list(EMAIL_STEP_RE.finditer(text))
+        source_format = "email_sections" if step_matches else "unparsed"
+
     steps: list[dict] = []
     for idx, match in enumerate(step_matches):
         start = match.end()
@@ -59,7 +65,8 @@ def parse_messaging_file(text: str, selected_sequence_name: str | None = None) -
                 "body_variants": _split_variants(text[start:end]),
             }
         )
-    return {"source_format": "step_sections", "subjects": extract_subjects(text), "steps": steps, "campaigns": [], "warnings": []}
+    subject_text = text[: step_matches[0].start()] if step_matches else text
+    return {"source_format": source_format, "subjects": extract_subjects(subject_text), "steps": steps, "campaigns": [], "warnings": []}
 
 
 def _select_campaign(campaigns: list[dict], selected_sequence_name: str | None) -> tuple[dict, list[str]]:
@@ -128,9 +135,17 @@ def _heading_name_before(text: str, position: int) -> str | None:
     before_lines = text[:position].splitlines()
     for line in reversed(before_lines):
         candidate = line.strip()
-        if candidate:
+        if candidate and not _looks_like_metadata_line(candidate):
             return candidate
     return None
+
+
+def _looks_like_metadata_line(line: str) -> bool:
+    if re.match(r"^\d+\.\s+", line):
+        return True
+    if line.lower().startswith("audience:"):
+        return True
+    return False
 
 
 def _heading_start_before(text: str, position: int) -> int | None:

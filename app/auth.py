@@ -46,6 +46,24 @@ def _session_username(request: Request) -> str | None:
     return username if isinstance(username, str) and username else None
 
 
+async def _csrf_valid(request: Request) -> bool:
+    session_token = request.cookies.get(COOKIE_NAME)
+    if not session_token:
+        return False
+
+    header_token = request.headers.get("x-csrf-token")
+    if header_token and secrets.compare_digest(header_token, session_token):
+        return True
+
+    content_type = request.headers.get("content-type", "")
+    if "application/x-www-form-urlencoded" not in content_type and "multipart/form-data" not in content_type:
+        return False
+
+    form = await request.form()
+    form_token = form.get("csrf_token")
+    return isinstance(form_token, str) and secrets.compare_digest(form_token, session_token)
+
+
 def _credentials_valid(username: str, password: str) -> bool:
     expected_username, expected_password = _configured_credentials()
     if not expected_username or not expected_password:
@@ -59,9 +77,11 @@ def _credentials_valid(username: str, password: str) -> bool:
     return username_ok and password_ok
 
 
-def require_auth(request: Request, credentials: HTTPBasicCredentials | None = Depends(security)) -> str:
+async def require_auth(request: Request, credentials: HTTPBasicCredentials | None = Depends(security)) -> str:
     username = _session_username(request)
     if username:
+        if request.method in {"POST", "PUT", "PATCH", "DELETE"} and not await _csrf_valid(request):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid CSRF token")
         return username
 
     if credentials and _credentials_valid(credentials.username, credentials.password):

@@ -1,6 +1,8 @@
 import re
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from pydantic import ValidationError
+
 from app.config import settings
 from app.schemas.campaign_plan import CampaignPlan
 
@@ -12,8 +14,10 @@ def validate_campaign_plan(plan_data: dict, active_workspace_keys: set[str] | No
     errors: list[str] = []
     try:
         plan = CampaignPlan.model_validate(plan_data)
+    except ValidationError as exc:
+        return _format_schema_errors(exc)
     except Exception as exc:
-        return [str(exc)]
+        return [f"campaign plan validation failed: {exc}"]
 
     if active_workspace_keys is not None and plan.workspace_key not in active_workspace_keys:
         errors.append("workspace_key does not match an active Smartlead workspace")
@@ -52,6 +56,17 @@ def validate_campaign_plan(plan_data: dict, active_workspace_keys: set[str] | No
             errors.extend(_validate_body_copy(variant.body))
 
     return errors
+
+
+def _format_schema_errors(exc: ValidationError) -> list[str]:
+    errors: list[str] = []
+    for detail in exc.errors():
+        loc = ".".join(str(part) for part in detail.get("loc", ())) or "plan"
+        message = detail.get("msg", "Invalid value")
+        if message.startswith("Value error, "):
+            message = message.removeprefix("Value error, ")
+        errors.append(f"{loc}: {message}")
+    return errors or ["campaign plan schema validation failed"]
 
 
 def _validate_body_copy(body: str) -> list[str]:

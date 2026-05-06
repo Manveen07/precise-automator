@@ -28,11 +28,13 @@ from fastapi.templating import Jinja2Templates
 from app.config import (
     SMARTLEAD_WORKSPACES,
     get_workspace_config,
+    infer_smartlead_client,
     settings,
 )
 from app.services.anthropic_service import AnthropicCampaignService
 from app.services.local_plan_service import build_campaign_plan_from_input
 from app.services.parser_service import parse_messaging_file
+from app.services.smartlead_import_service import build_campaign_plan_from_smartlead
 from app.services.smartlead_service import SmartleadService
 from app.services.spintax_service import apply_spintax_to_plan, count_bodies_needing_spintax
 from app.services.validation_service import validate_campaign_plan
@@ -93,39 +95,74 @@ def campaign_status(campaign_id: str) -> dict:
 @router.post("/api/campaigns/new")
 async def create_campaign(
     workspace_key: str = Form(...),
-    campaign_name: str = Form(...),
+    campaign_name: str = Form(""),
     max_new_leads_per_day: int = Form(100),
+    smartlead_campaign_ref: str = Form(""),
     messaging_text: str = Form(""),
     selected_sequence_name: str = Form(""),
     messaging_file: UploadFile | None = File(None),
 ) -> RedirectResponse:
-    if not get_workspace_config(workspace_key):
+    workspace = get_workspace_config(workspace_key)
+    if not workspace:
         raise HTTPException(status_code=400, detail=f"Unknown workspace: {workspace_key}")
+    smartlead_campaign_id = _parse_optional_smartlead_campaign_ref(smartlead_campaign_ref)
 
     uploaded_text = await _read_text_upload(messaging_file)
     final_text = uploaded_text or messaging_text
     parsed_messaging = parse_messaging_file(final_text, selected_sequence_name)
+    link_only_existing_campaign = bool(smartlead_campaign_id and not final_text.strip())
+    imported_plan = (
+        await _try_import_existing_smartlead_plan(workspace, smartlead_campaign_id, max_new_leads_per_day)
+        if link_only_existing_campaign and smartlead_campaign_id
+        else None
+    )
+    campaign_name = _resolve_campaign_name(
+        campaign_name,
+        smartlead_campaign_id,
+        selected_sequence_name,
+        parsed_messaging,
+        imported_plan.get("campaign_name") if imported_plan else None,
+    )
+    smartlead_client = infer_smartlead_client(workspace_key, campaign_name)
 
     raw_input = {
         "workspace_key": workspace_key,
         "campaign_name": campaign_name,
+        "smartlead_client": smartlead_client,
+        "smartlead_campaign_ref": smartlead_campaign_ref.strip(),
+        "smartlead_campaign_id": smartlead_campaign_id,
         "max_new_leads_per_day": max_new_leads_per_day,
         "messaging_filename": messaging_file.filename if uploaded_text and messaging_file else None,
         "selected_sequence_name": selected_sequence_name.strip() or parsed_messaging.get("selected_campaign"),
         "messaging_text": final_text,
         "parsed_messaging": parsed_messaging,
     }
-    plan = build_campaign_plan_from_input(
-        raw_input,
-        note="Plan generated deterministically from parsed messaging.",
-    )
-    errors = validate_campaign_plan(plan, _active_workspace_keys())
+    if imported_plan:
+        plan = imported_plan
+        errors = validate_campaign_plan(plan, _active_workspace_keys())
+        status = None
+    elif link_only_existing_campaign:
+        plan = {}
+        errors = []
+        status = "linked"
+    else:
+        plan = build_campaign_plan_from_input(
+            raw_input,
+            note="Plan generated deterministically from parsed messaging.",
+        )
+        errors = validate_campaign_plan(plan, _active_workspace_keys())
+        status = None
     doc = store.insert_campaign(
         workspace_key=workspace_key,
         campaign_name=campaign_name,
         raw_input=raw_input,
         plan=plan,
         validation_errors=errors,
+        smartlead_campaign_id=smartlead_campaign_id,
+        smartlead_client_id=smartlead_client["client_id"] if smartlead_client else None,
+        smartlead_client_name=smartlead_client["name"] if smartlead_client else None,
+        smartlead_client_match=smartlead_client["matched_alias"] if smartlead_client else None,
+        status=status,
     )
     return RedirectResponse(f"/campaigns/{doc['_id']}", status_code=303)
 
@@ -182,6 +219,17 @@ def revise_plan(
         )
     _log.info("Revise: success (campaign=%s, instruction=%r)", campaign_id, revision_instruction)
     errors = validate_campaign_plan(plan, _active_workspace_keys())
+    if errors:
+        _log.warning(
+            "Revise: Claude returned invalid CampaignPlan; preserving current plan (campaign=%s, errors=%s)",
+            campaign_id,
+            errors,
+        )
+        return _redirect_to_detail(
+            request,
+            campaign_id,
+            {"ok": False, "errors": ["Claude returned an invalid CampaignPlan; plan unchanged.", *errors]},
+        )
     store.update_plan(campaign_id, plan, errors)
     return _redirect_to_detail(request, campaign_id, {"ok": True, "errors": errors})
 
@@ -227,6 +275,9 @@ def sync_to_smartlead(
     background_tasks: BackgroundTasks,
 ):
     doc = _require_campaign(campaign_id)
+    plan = doc.get("current_plan") or {}
+    if not plan.get("sequence"):
+        raise HTTPException(status_code=400, detail="No local campaign plan to sync yet.")
     if doc.get("validation_errors"):
         raise HTTPException(status_code=400, detail="Plan has validation errors; revise before syncing.")
     if doc.get("status") == "syncing":
@@ -252,6 +303,14 @@ def link_existing_smartlead_campaign(
         raise HTTPException(status_code=400, detail="Paste a valid Smartlead campaign URL or numeric ID")
     store.attach_smartlead(campaign_id, smartlead_id)
     return _redirect_to_detail(request, campaign_id, {"ok": True, "smartlead_campaign_id": smartlead_id})
+
+
+@router.post("/api/campaigns/{campaign_id}/local-delete")
+def delete_local_campaign(campaign_id: str, request: Request):
+    _require_campaign(campaign_id)
+    deleted = store.delete_campaign(campaign_id)
+    payload = {"ok": deleted, "mode": "local_delete", "campaign_id": campaign_id}
+    return _redirect_after_delete(request, payload)
 
 
 # ----- Smartlead inspect/analytics/lifecycle ----- #
@@ -409,7 +468,7 @@ def _extract_smartlead_campaign_id(value: str) -> int | None:
     if not text:
         return None
     patterns = (
-        r"(?:email-campaign|campaign)/(\d+)",
+        r"(?:email-campaigns-v2|email-campaigns|email-campaign|campaigns?)/(\d+)",
         r"(?:campaign_id|smartlead_campaign_id)=(\d+)",
         r"\b(\d+)\b",
     )
@@ -424,6 +483,57 @@ def _extract_smartlead_campaign_id(value: str) -> int | None:
         if campaign_id > 0:
             return campaign_id
     return None
+
+
+def _parse_optional_smartlead_campaign_ref(value: str) -> int | None:
+    if not value or not value.strip():
+        return None
+    smartlead_id = _extract_smartlead_campaign_id(value)
+    if not smartlead_id:
+        raise HTTPException(status_code=400, detail="Paste a valid Smartlead campaign URL or numeric ID")
+    return smartlead_id
+
+
+async def _try_import_existing_smartlead_plan(workspace: dict, smartlead_campaign_id: int, max_new_leads_per_day: int) -> dict | None:
+    api_key = workspace.get("api_key")
+    if not api_key:
+        return None
+    smartlead = SmartleadService(api_key)
+    try:
+        campaign = await smartlead.get_campaign(smartlead_campaign_id)
+        sequences_response = await smartlead.get_sequences(smartlead_campaign_id)
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=400, detail=_smartlead_http_error("Import existing Smartlead campaign", exc)) from exc
+    sequences = sequences_response.get("data", sequences_response) if isinstance(sequences_response, dict) else sequences_response
+    if not isinstance(sequences, list):
+        return None
+    plan = build_campaign_plan_from_smartlead(
+        workspace_key=workspace["key"],
+        campaign=campaign,
+        sequences=sequences,
+        max_new_leads_per_day=max_new_leads_per_day,
+    )
+    return plan if plan.get("sequence") else None
+
+
+def _resolve_campaign_name(
+    campaign_name: str,
+    smartlead_campaign_id: int | None,
+    selected_sequence_name: str,
+    parsed_messaging: dict,
+    imported_campaign_name: str | None = None,
+) -> str:
+    explicit_name = (campaign_name or "").strip()
+    if explicit_name:
+        return explicit_name
+    if imported_campaign_name:
+        return imported_campaign_name
+    if smartlead_campaign_id:
+        return f"Smartlead Campaign {smartlead_campaign_id}"
+    sequence_name = (selected_sequence_name or "").strip() or (parsed_messaging.get("selected_campaign") or "").strip()
+    if sequence_name:
+        return sequence_name
+    return "Untitled Campaign"
 
 
 def _smartlead_for_doc(doc: dict) -> SmartleadService:
@@ -488,14 +598,19 @@ async def _read_text_upload(file: UploadFile | None) -> str:
 
 def _dashboard_row(doc: dict) -> dict:
     workspace = get_workspace_config(doc.get("smartlead_workspace", "")) or {"name": doc.get("smartlead_workspace", "?")}
+    smartlead_id = doc.get("smartlead_campaign_id")
+    smartlead_state = "Not linked"
+    if smartlead_id:
+        smartlead_state = "Synced" if doc.get("status") == "synced" else "Linked"
     return {
         "id": str(doc["_id"]),
         "name": doc.get("campaign_name", "Untitled campaign"),
         "status": doc.get("status", "drafting"),
-        "status_label": _status_label(doc.get("status", "drafting")),
-        "smartlead_id": doc.get("smartlead_campaign_id"),
-        "smartlead_state": "Synced to Smartlead" if doc.get("smartlead_campaign_id") else "Not synced",
+        "status_label": _dashboard_status_label(doc.get("status", "drafting")),
+        "smartlead_id": smartlead_id,
+        "smartlead_state": smartlead_state,
         "workspace": workspace["name"],
+        "smartlead_client": _smartlead_client_payload(doc, workspace)["label"],
         "updated_at": store.to_display_tz(doc.get("updated_at")),
         "last_sync_error": doc.get("last_sync_error"),
     }
@@ -506,7 +621,8 @@ def _detail_payload(doc: dict) -> dict:
     plan = doc.get("current_plan") or {}
     raw_input = doc.get("raw_input") or {}
     spintax_status = None
-    if plan:
+    has_local_plan = bool(plan.get("sequence"))
+    if has_local_plan:
         need, total = count_bodies_needing_spintax(plan)
         spintax_status = {"need": need, "total": total, "all_have_spintax": total > 0 and need == 0}
     return {
@@ -516,8 +632,10 @@ def _detail_payload(doc: dict) -> dict:
         "status_label": _status_label(doc.get("status", "drafting")),
         "workspace_key": doc.get("smartlead_workspace"),
         "workspace_name": workspace["name"],
+        "smartlead_client": _smartlead_client_payload(doc, workspace),
         "raw_input": raw_input,
         "plan": plan,
+        "has_local_plan": has_local_plan,
         "validation_errors": doc.get("validation_errors") or [],
         "smartlead_campaign_id": doc.get("smartlead_campaign_id"),
         "last_sync_error": doc.get("last_sync_error"),
@@ -533,9 +651,42 @@ def _status_label(status: str) -> str:
         "ready": "Ready to sync",
         "syncing": "Syncing",
         "synced": "Smartlead campaign created",
+        "linked": "Linked to Smartlead",
         "failed": "Failed",
         "archived": "Archived",
     }.get(status, status.replace("_", " ").title())
+
+
+def _dashboard_status_label(status: str) -> str:
+    return {
+        "drafting": "Draft",
+        "ready": "Ready",
+        "syncing": "Syncing",
+        "synced": "Synced",
+        "linked": "Linked",
+        "failed": "Failed",
+        "archived": "Archived",
+    }.get(status, status.replace("_", " ").title())
+
+
+def _smartlead_client_payload(doc: dict, workspace: dict) -> dict:
+    client_id = doc.get("smartlead_client_id")
+    client_name = doc.get("smartlead_client_name")
+    if client_id:
+        label = f"{client_name or 'Client'} (ID {client_id})"
+        return {
+            "id": client_id,
+            "name": client_name or "Client",
+            "match": doc.get("smartlead_client_match"),
+            "label": label,
+        }
+    self_client_name = workspace.get("self_client_name") or workspace.get("name", "Workspace")
+    return {
+        "id": None,
+        "name": self_client_name,
+        "match": None,
+        "label": self_client_name,
+    }
 
 
 # ----- Smartlead snapshot/analytics payloads ----- #
