@@ -60,6 +60,9 @@ Spintax quality
 - Single-word swaps ARE allowed when both words are natural and common
 - Do NOT use obscure synonyms or thesaurus words that sound forced
 - Do NOT spin template variables like {{first_name}} or %signature%
+- Do NOT place template variables inside a spintax block. This is invalid for Smartlead:
+  BAD: {a few ideas for {{company_name}}|a quick example}
+  GOOD: For {{company_name}}, I can share {a few ideas|a quick example}
 - Numbers can be spun between digit and word form
 - Word order can be flipped when both orderings sound natural
 - NESTING: Only use simple nesting where one spintax block sits next to another in the same sentence. Never nest entire sentence rewrites inside a single {} block. Keep it flat.

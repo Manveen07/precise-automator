@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from app.services import spintax_service
 from app.services.spintax_service import (
+    SPINTAX_SYSTEM_PROMPT,
     apply_spintax_to_plan,
     body_has_spintax,
     count_bodies_needing_spintax,
@@ -18,6 +19,11 @@ def test_body_has_spintax_does_not_match_merge_tags_or_signature():
     assert body_has_spintax("plain body, no spintax") is False
     # Single brace without a pipe is not spintax
     assert body_has_spintax("{not spintax}") is False
+
+
+def test_spintax_prompt_forbids_merge_tags_inside_spintax_blocks():
+    assert "Do NOT place template variables inside a spintax block" in SPINTAX_SYSTEM_PROMPT
+    assert "BAD: {a few ideas for {{company_name}}|a quick example}" in SPINTAX_SYSTEM_PROMPT
 
 
 def test_count_bodies_needing_spintax_counts_per_variant():
