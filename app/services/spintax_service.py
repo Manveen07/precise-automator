@@ -38,6 +38,10 @@ Preserve sentence structure
 - KEEP THE ORIGINAL SENTENCE SKELETON. Only swap words and phrases WITHIN the existing structure. Never create alternate sentence structures as spintax branches.
 - Do NOT add new claims, stats, angles, or information that were not in the original
 - Do NOT remove any information from the original
+- Do NOT change the selling message, offer, audience, intent, CTA, level of certainty, or business meaning
+- Do NOT make weak claims stronger or strong claims weaker. Preserve hedging and specificity exactly
+- Every option in a spintax block must be a true synonym in context. If an option changes meaning, omit that block
+- Preserve all concrete nouns and objects. Do not swap the thing being offered (example, teardown, idea, conversation, audit) unless the original already used those alternatives
 - Do NOT reorder sentences or paragraphs
 - Do NOT merge or split sentences
 - Keep bullet points as bullet points, keep PS lines as PS lines

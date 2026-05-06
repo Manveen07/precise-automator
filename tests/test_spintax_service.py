@@ -26,6 +26,11 @@ def test_spintax_prompt_forbids_merge_tags_inside_spintax_blocks():
     assert "BAD: {a few ideas for {{company_name}}|a quick example}" in SPINTAX_SYSTEM_PROMPT
 
 
+def test_spintax_prompt_requires_meaning_preservation():
+    assert "Do NOT change the selling message, offer, audience, intent, CTA" in SPINTAX_SYSTEM_PROMPT
+    assert "Every option in a spintax block must be a true synonym in context" in SPINTAX_SYSTEM_PROMPT
+
+
 def test_count_bodies_needing_spintax_counts_per_variant():
     plan = {
         "sequence": [
