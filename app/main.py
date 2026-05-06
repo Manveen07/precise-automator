@@ -1,4 +1,4 @@
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.auth import require_auth, router as auth_router
@@ -17,3 +17,13 @@ app.include_router(inboxes.router, dependencies=protected)
 @app.get("/health")
 def health() -> dict[str, bool]:
     return {"ok": True}
+
+
+@app.head("/")
+def root_head() -> Response:
+    return Response(status_code=200)
+
+
+@app.head("/health")
+def health_head() -> Response:
+    return Response(status_code=200)
