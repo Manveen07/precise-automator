@@ -28,6 +28,8 @@ def test_build_campaign_plan_from_parsed_repository_input():
     assert plan["campaign_name"] == "Darlean Benchmark"
     assert plan["schedule"]["max_new_leads_per_day"] == 75
     assert len(plan["sequence"][0]["variants"]) == 2
+    assert plan["sequence"][0]["delay_days"] == 0
+    assert plan["sequence"][1]["delay_days"] == 3
     assert plan["sequence"][0]["variants"][0]["subject"] == "Quick Benchmark"
     assert plan["sequence"][1]["variants"][0]["subject"] == ""
     assert "%signature%" in plan["sequence"][0]["variants"][0]["body"]

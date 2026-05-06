@@ -276,6 +276,36 @@ def generate_spintax(campaign_id: str, request: Request):
     return _redirect_to_detail(request, campaign_id, {"ok": True, "stats": stats, "errors": errors})
 
 
+@router.post("/api/campaigns/{campaign_id}/delay")
+def update_sequence_delay(
+    campaign_id: str,
+    request: Request,
+    step_number: int = Form(...),
+    delay_days: int = Form(...),
+):
+    doc = _require_campaign(campaign_id)
+    plan = doc.get("current_plan") or {}
+    if not plan.get("sequence"):
+        raise HTTPException(status_code=400, detail="No local campaign plan to edit.")
+    if step_number <= 1:
+        raise HTTPException(status_code=400, detail="Email 1 sends immediately and cannot be delayed.")
+    if delay_days < 1 or delay_days > 30:
+        raise HTTPException(status_code=400, detail="Delay must be between 1 and 30 days.")
+
+    updated = False
+    for step in plan.get("sequence", []):
+        if int(step.get("step_number", 0)) == step_number:
+            step["delay_days"] = delay_days
+            updated = True
+            break
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Email {step_number} was not found in this plan.")
+
+    errors = validate_campaign_plan(plan, _active_workspace_keys())
+    store.update_plan(campaign_id, plan, errors)
+    return _redirect_to_detail(request, campaign_id, {"ok": True, "errors": errors})
+
+
 # ----- Sync to Smartlead ----- #
 
 

@@ -99,7 +99,7 @@ def _canonicalize_body(body: str) -> str:
 
 
 def _default_delay_days(step_number: int) -> int:
-    return {1: 1, 2: 3, 3: 4, 4: 5}.get(step_number, 3)
+    return {1: 0, 2: 3, 3: 4, 4: 5}.get(step_number, 3)
 
 
 def _label_for_index(index: int) -> str:

@@ -138,7 +138,19 @@
     <article class="sequence-step">
       <header>
         <h3>Email {{ step.step_number }}</h3>
-        <span class="muted">Delay {{ step.delay_days }} day{% if step.delay_days != 1 %}s{% endif %}</span>
+        {% if step.step_number == 1 %}
+        <span class="muted">Sends immediately</span>
+        {% else %}
+        <form method="post" action="/api/campaigns/{{ campaign.id }}/delay" class="delay-form">
+          <input type="hidden" name="step_number" value="{{ step.step_number }}">
+          <label>
+            <span>Delay</span>
+            <input name="delay_days" type="number" min="1" max="30" value="{{ step.delay_days }}" aria-label="Delay for Email {{ step.step_number }} in days">
+          </label>
+          <span class="muted">day{% if step.delay_days != 1 %}s{% endif %}</span>
+          <button type="submit" class="small secondary">Save</button>
+        </form>
+        {% endif %}
       </header>
       <table>
         <thead>

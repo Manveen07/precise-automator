@@ -33,7 +33,7 @@ def build_smartlead_sequences(plan_sequence: Sequence[dict]) -> list[dict]:
         sequences.append(
             {
                 "seq_number": seq_number,
-                "seq_delay_details": {"delay_in_days": step["delay_days"]},
+                "seq_delay_details": {"delay_in_days": 0 if seq_number == 1 else step["delay_days"]},
                 "variant_distribution_type": "MANUAL_EQUAL",
                 "seq_variants": seq_variants,
             }

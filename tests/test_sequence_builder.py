@@ -15,7 +15,7 @@ def test_build_smartlead_sequences_uses_seq_variants_and_blank_followup_subjects
         [
             {
                 "step_number": 1,
-                "delay_days": 1,
+                "delay_days": 9,
                 "variants": [{"variant_label": "A", "subject": "hello", "body": "Body"}],
             },
             {
@@ -26,5 +26,7 @@ def test_build_smartlead_sequences_uses_seq_variants_and_blank_followup_subjects
         ]
     )
     assert "seq_variants" in sequences[0]
+    assert sequences[0]["seq_delay_details"]["delay_in_days"] == 0
+    assert sequences[1]["seq_delay_details"]["delay_in_days"] == 3
     assert sequences[0]["seq_variants"][0]["subject"] == "hello"
     assert sequences[1]["seq_variants"][0]["subject"] == ""

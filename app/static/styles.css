@@ -489,11 +489,36 @@ button.danger:hover {
 
 .sequence-step header {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
   padding: 12px 16px;
   background: var(--bg-soft);
   border-bottom: 1px solid var(--border);
+}
+
+.delay-form {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.delay-form label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  font-weight: 500;
+}
+
+.delay-form input[type="number"] {
+  width: 64px;
+  min-height: 30px;
+  padding: 5px 8px;
+  font-size: 13px;
 }
 
 pre {

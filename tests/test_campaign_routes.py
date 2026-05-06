@@ -433,6 +433,100 @@ def test_spintax_preserves_current_plan_when_generated_body_is_not_smartlead_saf
     assert refreshed["current_plan"] == current_plan
 
 
+def test_campaign_detail_shows_immediate_first_email_and_delay_form_for_followups(client):
+    doc = store.insert_campaign(
+        workspace_key="preciselead",
+        campaign_name="Delay UI",
+        raw_input={"workspace_key": "preciselead", "campaign_name": "Delay UI", "parsed_messaging": {}},
+        plan={
+            "workspace_key": "preciselead",
+            "campaign_name": "Delay UI",
+            "template_family": "cold_email_standard_v1",
+            "schedule": {},
+            "settings": {},
+            "inbox_selection": {"mode": "skip", "email_account_ids": []},
+            "sequence": [
+                {"step_number": 1, "delay_days": 0, "variants": [{"variant_label": "A", "subject": "Hi", "body": "Body"}]},
+                {"step_number": 2, "delay_days": 3, "variants": [{"variant_label": "A", "subject": "", "body": "Follow up"}]},
+            ],
+            "approval_required": True,
+            "notes_for_operator": [],
+        },
+        validation_errors=[],
+    )
+
+    response = client.get(f"/campaigns/{doc['_id']}")
+
+    assert response.status_code == 200
+    assert "Sends immediately" in response.text
+    assert f'/api/campaigns/{doc["_id"]}/delay' in response.text
+    assert 'name="delay_days"' in response.text
+    assert 'value="3"' in response.text
+
+
+def test_update_sequence_delay_changes_followup_delay(client):
+    doc = store.insert_campaign(
+        workspace_key="preciselead",
+        campaign_name="Delay Update",
+        raw_input={"workspace_key": "preciselead", "campaign_name": "Delay Update", "parsed_messaging": {}},
+        plan={
+            "workspace_key": "preciselead",
+            "campaign_name": "Delay Update",
+            "template_family": "cold_email_standard_v1",
+            "schedule": {},
+            "settings": {},
+            "inbox_selection": {"mode": "skip", "email_account_ids": []},
+            "sequence": [
+                {"step_number": 1, "delay_days": 0, "variants": [{"variant_label": "A", "subject": "Hi", "body": "Body"}]},
+                {"step_number": 2, "delay_days": 3, "variants": [{"variant_label": "A", "subject": "", "body": "Follow up"}]},
+            ],
+            "approval_required": True,
+            "notes_for_operator": [],
+        },
+        validation_errors=[],
+    )
+    campaign_id = str(doc["_id"])
+
+    response = client.post(
+        f"/api/campaigns/{campaign_id}/delay",
+        data={"step_number": "2", "delay_days": "5"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    refreshed = store.get_campaign(campaign_id)
+    assert refreshed["current_plan"]["sequence"][1]["delay_days"] == 5
+
+
+def test_update_sequence_delay_rejects_first_email_delay(client):
+    doc = store.insert_campaign(
+        workspace_key="preciselead",
+        campaign_name="Delay Reject",
+        raw_input={"workspace_key": "preciselead", "campaign_name": "Delay Reject", "parsed_messaging": {}},
+        plan={
+            "workspace_key": "preciselead",
+            "campaign_name": "Delay Reject",
+            "template_family": "cold_email_standard_v1",
+            "schedule": {},
+            "settings": {},
+            "inbox_selection": {"mode": "skip", "email_account_ids": []},
+            "sequence": [
+                {"step_number": 1, "delay_days": 0, "variants": [{"variant_label": "A", "subject": "Hi", "body": "Body"}]},
+            ],
+            "approval_required": True,
+            "notes_for_operator": [],
+        },
+        validation_errors=[],
+    )
+
+    response = client.post(
+        f"/api/campaigns/{doc['_id']}/delay",
+        data={"step_number": "1", "delay_days": "5"},
+    )
+
+    assert response.status_code == 400
+
+
 # ---- Smartlead linking ---- #
 
 
