@@ -80,3 +80,41 @@ def test_slack_resume_action_calls_smartlead(monkeypatch):
     assert resumed["campaign_id"] == 2939345
     assert resumed["account"] == "Belardi Wong"
     assert "resumed" in resumed["response_text"]
+
+
+def test_slack_resume_action_failure_still_returns_200_and_posts_error(monkeypatch):
+    result = {}
+
+    async def fake_find_account(campaign_id):
+        return CampaignAccount("belardi_wong", "Belardi Wong", "key"), {"name": "Campaign"}
+
+    async def fake_resume(campaign_id, account):
+        raise RuntimeError("Smartlead POST failed: api_key=secret-token")
+
+    async def fake_response(payload, text):
+        result["response_text"] = text
+
+    monkeypatch.setattr(monitor, "verify_slack_signature", lambda raw, headers: True)
+    monkeypatch.setattr(monitor, "find_account_for_campaign", fake_find_account)
+    monkeypatch.setattr(monitor, "resume_campaign", fake_resume)
+    monkeypatch.setattr(monitor, "_post_slack_response", fake_response)
+
+    payload = {
+        "user": {"name": "Manveen"},
+        "response_url": "https://slack.example/response",
+        "actions": [
+            {
+                "action_id": "campaign_action_select",
+                "selected_option": {
+                    "value": '{"action":"ACTIVE","campaign_id":2939345,"campaign_name":"Integrated Digital"}'
+                },
+            }
+        ],
+    }
+
+    response = TestClient(app).post("/api/monitor/slack/actions", data={"payload": __import__("json").dumps(payload)})
+
+    assert response.status_code == 200
+    assert "Could not apply action" in result["response_text"]
+    assert "api_key=[redacted]" in result["response_text"]
+    assert "secret-token" not in result["response_text"]

@@ -1,6 +1,6 @@
 import json
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import Response
 
 from app.config import get_secret_value, settings
@@ -61,7 +61,7 @@ async def smartlead_status_webhook(request: Request):
 
 
 @router.post("/slack/actions")
-async def slack_action(request: Request):
+async def slack_action(request: Request, background_tasks: BackgroundTasks):
     raw_body = await request.body()
     if not verify_slack_signature(raw_body, dict(request.headers)):
         raise HTTPException(status_code=401, detail="Invalid Slack signature")
@@ -79,19 +79,41 @@ async def slack_action(request: Request):
 
     if not campaign_id:
         return Response(status_code=200)
-    if selected_action == "PAUSED":
-        await _post_slack_response(payload, f"{user} chose to keep {campaign_name} paused.")
-        return Response(status_code=200)
-    if selected_action != "ACTIVE":
-        return Response(status_code=200)
-
-    account, _campaign = await find_account_for_campaign(campaign_id)
-    if not account:
-        await _post_slack_response(payload, f"Could not find Smartlead campaign {campaign_id} in configured accounts.")
-        return Response(status_code=200)
-    await resume_campaign(campaign_id, account)
-    await _post_slack_response(payload, f"{user} resumed {campaign_name}. Campaign is now ACTIVE.")
+    if selected_action in {"PAUSED", "ACTIVE"}:
+        background_tasks.add_task(
+            _handle_slack_campaign_action,
+            payload,
+            selected_action,
+            campaign_id,
+            campaign_name,
+            user,
+        )
     return Response(status_code=200)
+
+
+async def _handle_slack_campaign_action(
+    payload: dict,
+    selected_action: str,
+    campaign_id: int,
+    campaign_name: str,
+    user: str,
+) -> None:
+    try:
+        if selected_action == "PAUSED":
+            await _post_slack_response(payload, f"{user} chose to keep {campaign_name} paused.")
+            return
+
+        account, _campaign = await find_account_for_campaign(campaign_id)
+        if not account:
+            await _post_slack_response(payload, f"Could not find Smartlead campaign {campaign_id} in configured accounts.")
+            return
+        await resume_campaign(campaign_id, account)
+        await _post_slack_response(payload, f"{user} resumed {campaign_name}. Campaign is now ACTIVE.")
+    except Exception as exc:
+        await _post_slack_response(
+            payload,
+            f"Could not apply action to {campaign_name or campaign_id}: {_redact_secret_text(str(exc))}",
+        )
 
 
 def _verify_webhook_secret(request: Request) -> None:
@@ -146,3 +168,7 @@ async def _post_slack_response(payload: dict, text: str) -> None:
                 "response_type": "in_channel",
             },
         )
+
+
+def _redact_secret_text(value: str) -> str:
+    return __import__("re").sub(r"api_key=([^&\s]+)", "api_key=[redacted]", value)
