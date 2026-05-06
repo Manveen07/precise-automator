@@ -40,6 +40,7 @@
           }
         }
         if (!(form instanceof HTMLFormElement) || !form.classList.contains("js-single-submit")) return;
+        if (event.defaultPrevented) return;
         const button = form.querySelector("button[type=submit], button:not([type])");
         if (!button) return;
         button.disabled = true;
