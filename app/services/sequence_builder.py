@@ -5,10 +5,11 @@ from collections.abc import Sequence
 
 def format_email_body_for_smartlead(body: str) -> str:
     body = body.replace("\r\n", "\n").replace("\r", "\n")
+    body = body.replace("%Signature%", "%signature%").replace("%SIGNATURE%", "%signature%")
     lines = [line.rstrip() for line in body.split("\n")]
     body = "\n".join(lines)
     body = re.sub(r"\n{3,}", "\n\n", body)
-    body = body.replace("%Signature%", "\n\n%Signature%")
+    body = body.replace("%signature%", "\n\n%signature%")
     body = re.sub(r"\n{3,}", "\n\n", body)
     body = body.replace("\n\n", "<br><br>")
     return body.replace("\n", "<br>")

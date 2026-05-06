@@ -90,7 +90,7 @@ def _html_to_text(value: str) -> str:
 
 
 def _canonicalize_body(body: str) -> str:
-    return body.strip().replace("%signature%", "%Signature%").replace("%SIGNATURE%", "%Signature%")
+    return body.strip().replace("%Signature%", "%signature%").replace("%SIGNATURE%", "%signature%")
 
 
 def _normalize_hour(value: str) -> str:

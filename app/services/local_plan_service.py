@@ -95,7 +95,7 @@ def _build_step_variants(step_number: int, subjects: list[str], body_variants: l
 
 
 def _canonicalize_body(body: str) -> str:
-    return body.strip().replace("%signature%", "%Signature%").replace("%SIGNATURE%", "%Signature%")
+    return body.strip().replace("%Signature%", "%signature%").replace("%SIGNATURE%", "%signature%")
 
 
 def _default_delay_days(step_number: int) -> int:

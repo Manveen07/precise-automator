@@ -30,7 +30,7 @@ def test_build_campaign_plan_from_parsed_repository_input():
     assert len(plan["sequence"][0]["variants"]) == 2
     assert plan["sequence"][0]["variants"][0]["subject"] == "Quick Benchmark"
     assert plan["sequence"][1]["variants"][0]["subject"] == ""
-    assert "%Signature%" in plan["sequence"][0]["variants"][0]["body"]
+    assert "%signature%" in plan["sequence"][0]["variants"][0]["body"]
 
 
 def test_build_campaign_plan_notes_truncation_and_skipped_empty_steps():

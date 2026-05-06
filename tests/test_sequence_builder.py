@@ -6,7 +6,7 @@ def test_format_email_body_for_smartlead_preserves_tokens():
     formatted = format_email_body_for_smartlead(body)
     assert "{{first_name}}" in formatted
     assert "{a|b}" in formatted
-    assert "<br><br>%Signature%" in formatted
+    assert "<br><br>%signature%" in formatted
     assert "\n" not in formatted
 
 

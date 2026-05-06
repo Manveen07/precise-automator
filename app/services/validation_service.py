@@ -7,7 +7,7 @@ from app.config import settings
 from app.schemas.campaign_plan import CampaignPlan
 
 MALFORMED_MERGE_RE = re.compile(r"(?<!\{)\{[A-Za-z_][A-Za-z0-9_]*\}(?!\})")
-ALLOWED_MERGE_TAGS = {"{{first_name}}", "{{company_name}}", "{{company}}", "%Signature%"}
+ALLOWED_MERGE_TAGS = {"{{first_name}}", "{{company_name}}", "{{company}}", "%signature%"}
 
 
 def validate_campaign_plan(plan_data: dict, active_workspace_keys: set[str] | None = None) -> list[str]:

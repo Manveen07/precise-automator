@@ -111,6 +111,16 @@ def test_apply_spintax_strips_unique_combinations_footer_from_returned_body():
     assert spun == "{Hi|Hey} Plain body"
 
 
+def test_generate_spintax_normalizes_signature_token_to_lowercase():
+    client = FakeAnthropicClient()
+    plan = {"sequence": [{"variants": [{"body": "Plain body\n%SIGNATURE%"}]}]}
+    new_plan, _ = apply_spintax_to_plan(plan, client)
+
+    assert "%signature%" in new_plan["sequence"][0]["variants"][0]["body"]
+    assert "%SIGNATURE%" not in new_plan["sequence"][0]["variants"][0]["body"]
+    assert "%Signature%" not in new_plan["sequence"][0]["variants"][0]["body"]
+
+
 def test_apply_spintax_does_not_mutate_input_plan():
     client = FakeAnthropicClient()
     original = {"sequence": [{"variants": [{"body": "Plain body"}]}]}

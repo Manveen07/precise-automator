@@ -122,6 +122,10 @@ def _strip_combination_footer(text: str) -> str:
     return "\n".join(lines).rstrip()
 
 
+def _normalize_signature_token(text: str) -> str:
+    return (text or "").replace("%Signature%", "%signature%").replace("%SIGNATURE%", "%signature%")
+
+
 def generate_spintax_for_body(client: Anthropic, body: str) -> str:
     response = client.messages.create(
         model=settings.ANTHROPIC_MODEL,
@@ -129,7 +133,7 @@ def generate_spintax_for_body(client: Anthropic, body: str) -> str:
         system=SPINTAX_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": body}],
     )
-    return _strip_combination_footer(response.content[0].text)
+    return _normalize_signature_token(_strip_combination_footer(response.content[0].text))
 
 
 def apply_spintax_to_plan(plan: dict, client: Anthropic) -> tuple[dict, dict]:

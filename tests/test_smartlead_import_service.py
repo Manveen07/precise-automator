@@ -31,4 +31,4 @@ def test_build_campaign_plan_from_smartlead_maps_sequences_and_html_body():
     assert plan["schedule"]["start_hour"] == "09:00"
     assert plan["schedule"]["end_hour"] == "18:00"
     assert plan["sequence"][0]["variants"][0]["subject"] == "Referral Dependence"
-    assert plan["sequence"][0]["variants"][0]["body"] == "Hi {{first_name}},\n\nWant me to hold you a seat?\n\n%Signature%"
+    assert plan["sequence"][0]["variants"][0]["body"] == "Hi {{first_name}},\n\nWant me to hold you a seat?\n\n%signature%"
