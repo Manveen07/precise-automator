@@ -261,6 +261,17 @@ def generate_spintax(campaign_id: str, request: Request):
             {"ok": True, "stats": stats, "note": "All bodies already had spintax."},
         )
     errors = validate_campaign_plan(new_plan, _active_workspace_keys())
+    if errors:
+        _log.warning(
+            "Spintax: Claude returned invalid CampaignPlan; preserving current plan (campaign=%s, errors=%s)",
+            campaign_id,
+            errors,
+        )
+        return _redirect_to_detail(
+            request,
+            campaign_id,
+            {"ok": False, "stats": stats, "errors": ["Spintax result was not Smartlead-safe; previous plan preserved.", *errors]},
+        )
     store.update_plan(campaign_id, new_plan, errors)
     return _redirect_to_detail(request, campaign_id, {"ok": True, "stats": stats, "errors": errors})
 

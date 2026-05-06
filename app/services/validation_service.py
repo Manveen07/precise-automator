@@ -75,10 +75,51 @@ def _validate_body_copy(body: str) -> list[str]:
         errors.append("body contains malformed merge braces")
     if body.count("{") != body.count("}"):
         errors.append("body contains unbalanced braces")
+    if _has_merge_tag_inside_spintax(body):
+        errors.append(
+            "body contains a merge tag inside a spintax block; move the merge tag outside the {option|option} block before syncing to Smartlead"
+        )
     for phrase in settings.BLOCKED_PHRASES:
         if _contains_blocked_phrase(body, phrase):
             errors.append(f"body contains blocked phrase: {phrase}")
     return errors
+
+
+def _has_merge_tag_inside_spintax(body: str) -> bool:
+    """Smartlead's parser rejects blocks like `{a|b for {{company_name}}}`.
+
+    Double-brace merge tags are valid on their own, and simple single-brace
+    spintax is valid on its own. The invalid shape is a merge tag nested inside
+    one single-brace spintax block.
+    """
+    text = body or ""
+    index = 0
+    while index < len(text):
+        if text[index] != "{" or (index + 1 < len(text) and text[index + 1] == "{"):
+            index += 1
+            continue
+
+        has_pipe = False
+        has_merge_tag = False
+        cursor = index + 1
+        while cursor < len(text):
+            if text.startswith("{{", cursor):
+                end = text.find("}}", cursor + 2)
+                if end == -1:
+                    break
+                has_merge_tag = True
+                cursor = end + 2
+                continue
+            if text[cursor] == "|":
+                has_pipe = True
+            if text[cursor] == "}" and not (cursor + 1 < len(text) and text[cursor + 1] == "}"):
+                if has_pipe and has_merge_tag:
+                    return True
+                index = cursor
+                break
+            cursor += 1
+        index += 1
+    return False
 
 
 def _contains_blocked_phrase(body: str, phrase: str) -> bool:

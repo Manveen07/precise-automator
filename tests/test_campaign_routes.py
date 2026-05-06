@@ -370,6 +370,69 @@ def test_revise_preserves_current_plan_when_claude_returns_empty_sequence(client
     assert refreshed["current_plan"] == current_plan
 
 
+def test_spintax_preserves_current_plan_when_generated_body_is_not_smartlead_safe(client, monkeypatch):
+    current_plan = {
+        "workspace_key": "preciselead",
+        "campaign_name": "Spintax Safety",
+        "template_family": "cold_email_standard_v1",
+        "goal": "book_meeting",
+        "lead_source": {"type": "none", "expected_count": None},
+        "schedule": {
+            "timezone": "America/New_York",
+            "days_of_the_week": [1, 2, 3, 4, 5],
+            "start_hour": "09:00",
+            "end_hour": "18:00",
+            "min_time_btw_emails": 17,
+            "max_new_leads_per_day": 100,
+        },
+        "settings": {
+            "send_as_plain_text": True,
+            "track_opens": False,
+            "track_clicks": False,
+            "stop_on_reply": True,
+            "enable_ai_esp_matching": True,
+            "auto_pause_domain_leads_on_reply": True,
+            "ooo_restart_delay_days": 10,
+        },
+        "inbox_selection": {"mode": "skip", "email_account_ids": []},
+        "sequence": [
+            {
+                "step_number": 1,
+                "delay_days": 1,
+                "variants": [{"variant_label": "A", "subject": "Quick test", "body": "Hi {{first_name}}, plain body."}],
+            }
+        ],
+        "approval_required": True,
+        "notes_for_operator": [],
+    }
+    doc = store.insert_campaign(
+        workspace_key="preciselead",
+        campaign_name="Spintax Safety",
+        raw_input={"workspace_key": "preciselead", "campaign_name": "Spintax Safety", "parsed_messaging": {}},
+        plan=deepcopy(current_plan),
+        validation_errors=[],
+    )
+
+    def fake_apply_spintax_to_plan(plan, client):
+        invalid_plan = deepcopy(plan)
+        invalid_plan["sequence"][0]["variants"][0]["body"] = (
+            "Hi {{first_name}}, I can share {a quick example|a few ideas for {{company_name}}}."
+        )
+        return invalid_plan, {"generated": 1, "skipped_already_spun": 0, "unique_calls": 1}
+
+    monkeypatch.setattr(campaigns, "_has_configured_anthropic_key", lambda: True)
+    monkeypatch.setattr(campaigns, "apply_spintax_to_plan", fake_apply_spintax_to_plan)
+
+    response = client.post(f"/api/campaigns/{doc['_id']}/spintax")
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is False
+    assert "previous plan preserved" in response.json()["errors"][0]
+    assert any("merge tag inside a spintax block" in error for error in response.json()["errors"])
+    refreshed = store.get_campaign(str(doc["_id"]))
+    assert refreshed["current_plan"] == current_plan
+
+
 # ---- Smartlead linking ---- #
 
 

@@ -81,3 +81,27 @@ def test_blocked_phrase_uses_token_boundaries():
 
     plan["sequence"][0]["variants"][0]["body"] = "This is guaranteed copy."
     assert any("blocked phrase" in error for error in validate_campaign_plan(plan, {"smartlead_mcp"}))
+
+
+def test_merge_tag_inside_spintax_block_is_rejected():
+    plan = valid_plan()
+    plan["sequence"][0]["variants"][0]["body"] = (
+        "Hi {{first_name}},\n\n"
+        "I can share {a quick example|a few ideas for {{company_name}}}.\n\n"
+        "%Signature%"
+    )
+
+    errors = validate_campaign_plan(plan, {"smartlead_mcp"})
+
+    assert any("merge tag inside a spintax block" in error for error in errors)
+
+
+def test_merge_tags_next_to_spintax_blocks_are_allowed():
+    plan = valid_plan()
+    plan["sequence"][0]["variants"][0]["body"] = (
+        "Hi {{first_name}},\n\n"
+        "For {{company_name}}, I can share {a quick example|a few ideas}.\n\n"
+        "%Signature%"
+    )
+
+    assert validate_campaign_plan(plan, {"smartlead_mcp"}) == []
