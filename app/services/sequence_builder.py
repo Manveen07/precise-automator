@@ -13,6 +13,7 @@ def format_email_body_for_smartlead(body: str) -> str:
     body = "\n".join(line.rstrip() for line in body.split("\n"))
     body = re.sub(r"\n{3,}", "\n\n", body)
     body = body.strip("\n")
+    body = _expand_prose_paragraphs(body)
     body = re.sub(r"\n*%signature%", "\n\n%signature%", body)
     body = re.sub(r"\n{3,}", "\n\n", body)
     body = escape(body, quote=False)
@@ -49,6 +50,31 @@ def _preserve_visible_spacing(body: str) -> str:
         line = re.sub(r" {2,}", lambda match: " " + "&nbsp;" * (len(match.group(0)) - 1), line)
         lines.append(line)
     return "\n".join(lines)
+
+
+_LIST_ITEM_RE = re.compile(r"^\s*(?:[-*•–—]|\d+[.)]|[A-Za-z][.)])\s+")
+
+
+def _expand_prose_paragraphs(body: str) -> str:
+    """Treat adjacent prose lines from rich-text exports as paragraphs.
+
+    Google Docs and similar editors can show paragraph spacing through visual
+    styles that disappear in .txt exports. Keep explicit spacing and list
+    blocks intact while adding paragraph breaks between prose lines.
+    """
+    lines = body.split("\n")
+    out: list[str] = []
+    for idx, line in enumerate(lines):
+        out.append(line)
+        if idx + 1 >= len(lines):
+            break
+        next_line = lines[idx + 1]
+        if not line.strip() or not next_line.strip():
+            continue
+        if _LIST_ITEM_RE.match(next_line):
+            continue
+        out.append("")
+    return "\n".join(out)
 
 
 def build_smartlead_sequences(plan_sequence: Sequence[dict]) -> list[dict]:

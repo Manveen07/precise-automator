@@ -36,7 +36,7 @@ def test_format_email_body_for_smartlead_cleans_google_docs_unicode_whitespace()
     body = "\ufeffHi\u00a0{{first_name}},\u2028Line two\taligned\u2029%Signature%"
     formatted = format_email_body_for_smartlead(body)
 
-    assert formatted == "Hi {{first_name}},<br>Line two &nbsp;&nbsp;&nbsp;aligned<br><br>%signature%"
+    assert formatted == "Hi {{first_name}},<br><br>Line two &nbsp;&nbsp;&nbsp;aligned<br><br>%signature%"
     assert "\ufeff" not in formatted
     assert "\u00a0" not in formatted
     assert "\u2028" not in formatted
@@ -74,3 +74,74 @@ def test_build_smartlead_sequences_uses_seq_variants_and_blank_followup_subjects
     assert sequences[1]["seq_delay_details"]["delay_in_days"] == 3
     assert sequences[0]["seq_variants"][0]["subject"] == "hello"
     assert sequences[1]["seq_variants"][0]["subject"] == ""
+
+
+def test_format_email_body_expands_google_docs_flat_export():
+    body = (
+        "Hi {{First_Name}}\n"
+        "\n"
+        "Most environmental firms hit the same wall once they juggle 30+ projects.\n"
+        "Field teams, labs, and report writers all work in separate systems.\n"
+        "Darlean helps firms track projects without spreadsheets or emails.\n"
+        "Worth exploring?\n"
+        "%Signature%"
+    )
+    formatted = format_email_body_for_smartlead(body)
+
+    assert "Hi {{First_Name}}<br><br>Most environmental firms" in formatted
+    assert "30+ projects.<br><br>Field teams" in formatted
+    assert "separate systems.<br><br>Darlean helps" in formatted
+    assert "Worth exploring?<br><br>%signature%" in formatted
+    assert "projects.<br>Field" not in formatted
+
+
+def test_format_email_body_does_not_double_space_pre_spaced_source():
+    body = (
+        "{Hi|Hey} {{first_name}},\n"
+        "\n"
+        "{Have you tested|Ever tried} shared mail?\n"
+        "\n"
+        "{Let me know|Happy to share} more.\n"
+        "\n"
+        "%signature%"
+    )
+    formatted = format_email_body_for_smartlead(body)
+
+    assert "<br><br><br>" not in formatted
+    assert "{first_name}},<br><br>{Have you tested" in formatted
+    assert "shared mail?<br><br>{Let me know" in formatted
+
+
+def test_format_email_body_keeps_list_items_tight():
+    body = (
+        "Here is what we offer:\n"
+        "- Free setup\n"
+        "- $1/user for 6 months\n"
+        "- Migration support\n"
+        "\n"
+        "Worth a chat?\n"
+        "%signature%"
+    )
+    formatted = format_email_body_for_smartlead(body)
+
+    assert "we offer:<br>- Free setup" in formatted
+    assert "Free setup<br>- $1/user" in formatted
+    assert "$1/user for 6 months<br>- Migration support" in formatted
+    assert "Migration support<br><br>Worth a chat?" in formatted
+    assert "Free setup<br><br>" not in formatted
+
+
+def test_format_email_body_handles_numbered_lists():
+    body = (
+        "Three steps:\n"
+        "1. Sign up\n"
+        "2. Connect inbox\n"
+        "3. Launch campaign\n"
+        "\n"
+        "Done."
+    )
+    formatted = format_email_body_for_smartlead(body)
+
+    assert "Three steps:<br>1. Sign up" in formatted
+    assert "1. Sign up<br>2. Connect inbox" in formatted
+    assert "3. Launch campaign<br><br>Done." in formatted
