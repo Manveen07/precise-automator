@@ -2,7 +2,13 @@ import httpx
 import pytest
 
 from app.config import infer_smartlead_client
-from app.workers.sync_campaign import _error_text, _extract_campaign_id, _resolve_client_id
+from app.workers.sync_campaign import (
+    _error_text,
+    _extract_campaign_id,
+    _html_to_compare_text,
+    _resolve_client_id,
+    _sequence_sync_mismatches,
+)
 
 
 def test_extract_campaign_id_accepts_top_level_and_wrapped_responses():
@@ -36,6 +42,60 @@ def test_error_text_handles_non_http_exceptions():
     text = _error_text(RuntimeError("boom"))
     assert "RuntimeError" in text
     assert "boom" in text
+
+
+def test_html_to_compare_text_preserves_visible_spacing_from_smartlead_html():
+    html = "Hi {{first_name}},<br><br>1. &nbsp;&lt;&gt;<br>&nbsp;&nbsp;indented &nbsp;words"
+
+    assert _html_to_compare_text(html) == "Hi {{first_name}},\n\n1.  <>\n  indented  words"
+
+
+def test_sequence_sync_mismatches_accepts_equivalent_smartlead_html():
+    plan_sequence = [
+        {
+            "step_number": 1,
+            "variants": [
+                {
+                    "variant_label": "A",
+                    "subject": "New Movers",
+                    "body": "Hi {{first_name}},\n\n1.  <>\n%signature%",
+                }
+            ],
+        }
+    ]
+    smartlead_sequences = [
+        {
+            "seq_number": 1,
+            "sequence_variants": [
+                {
+                    "variant_label": "A",
+                    "subject": "New Movers",
+                    "email_body": "Hi {{first_name}},<br><br>1. &nbsp;&lt;&gt;<br>%signature%",
+                }
+            ],
+        }
+    ]
+
+    assert _sequence_sync_mismatches(plan_sequence, smartlead_sequences) == []
+
+
+def test_sequence_sync_mismatches_reports_missing_or_changed_copy():
+    plan_sequence = [
+        {
+            "step_number": 2,
+            "variants": [{"variant_label": "A", "subject": "", "body": "Line one\n\nLine two"}],
+        }
+    ]
+    smartlead_sequences = [
+        {
+            "seq_number": 2,
+            "sequence_variants": [{"variant_label": "A", "subject": "", "email_body": "Line one<br>Line two"}],
+        }
+    ]
+
+    assert _sequence_sync_mismatches(plan_sequence, smartlead_sequences) == [
+        "Email 2 variant A body changed or lost spacing"
+    ]
 
 
 @pytest.mark.parametrize(

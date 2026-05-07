@@ -16,6 +16,7 @@ operator immediately, so this runs after the response is sent.
 """
 
 import asyncio
+from html import unescape
 import json
 import re
 
@@ -94,6 +95,7 @@ async def _sync_campaign_async(campaign_id: str) -> None:
 
         sequences = build_smartlead_sequences(plan["sequence"])
         await smartlead.update_sequences(smartlead_id, sequences)
+        await _verify_smartlead_sequence_sync(smartlead, smartlead_id, plan["sequence"])
 
         email_account_ids = plan.get("inbox_selection", {}).get("email_account_ids") or []
         if email_account_ids:
@@ -108,6 +110,102 @@ def _active_workspace_keys() -> set[str]:
     from app.config import SMARTLEAD_WORKSPACES
 
     return {w["key"] for w in SMARTLEAD_WORKSPACES}
+
+
+async def _verify_smartlead_sequence_sync(
+    smartlead: SmartleadService,
+    smartlead_id: int,
+    plan_sequence: list[dict],
+) -> None:
+    last_error: RuntimeError | None = None
+    for attempt in range(3):
+        response = await smartlead.get_sequences(smartlead_id)
+        smartlead_sequences = _smartlead_sequence_list(response)
+        errors = _sequence_sync_mismatches(plan_sequence, smartlead_sequences)
+        if not errors:
+            return
+        last_error = RuntimeError("Smartlead sequence verification failed: " + "; ".join(errors[:5]))
+        if attempt < 2:
+            await asyncio.sleep(1)
+    if last_error:
+        raise last_error
+
+
+def _smartlead_sequence_list(response: object) -> list[dict]:
+    if isinstance(response, dict):
+        data = response.get("data", response)
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict) and isinstance(data.get("sequences"), list):
+            return data["sequences"]
+        if isinstance(response.get("sequences"), list):
+            return response["sequences"]
+    if isinstance(response, list):
+        return response
+    return []
+
+
+def _sequence_sync_mismatches(plan_sequence: list[dict], smartlead_sequences: list[dict]) -> list[str]:
+    errors: list[str] = []
+    actual_by_step = {
+        int(step.get("seq_number") or step.get("step_number") or 0): step
+        for step in smartlead_sequences
+        if step.get("seq_number") or step.get("step_number")
+    }
+    for expected_step in plan_sequence:
+        step_number = int(expected_step.get("step_number") or 0)
+        actual_step = actual_by_step.get(step_number)
+        if not actual_step:
+            errors.append(f"Email {step_number} missing in Smartlead")
+            continue
+        errors.extend(_variant_sync_mismatches(step_number, expected_step.get("variants") or [], actual_step))
+    return errors
+
+
+def _variant_sync_mismatches(step_number: int, expected_variants: list[dict], actual_step: dict) -> list[str]:
+    errors: list[str] = []
+    actual_variants = actual_step.get("sequence_variants") or actual_step.get("seq_variants") or []
+    if not actual_variants and (actual_step.get("email_body") or actual_step.get("subject")):
+        actual_variants = [actual_step]
+    actual_by_label = {
+        str(variant.get("variant_label") or _label_for_index(idx)): variant
+        for idx, variant in enumerate(actual_variants)
+        if not variant.get("is_deleted")
+    }
+    for idx, expected in enumerate(expected_variants):
+        label = str(expected.get("variant_label") or _label_for_index(idx))
+        actual = actual_by_label.get(label)
+        if not actual:
+            errors.append(f"Email {step_number} variant {label} missing in Smartlead")
+            continue
+        expected_subject = _normalize_compare_text(str(expected.get("subject") or ""))
+        actual_subject = _normalize_compare_text(str(actual.get("subject") or actual_step.get("subject") or ""))
+        if expected_subject != actual_subject:
+            errors.append(f"Email {step_number} variant {label} subject changed")
+        expected_body = _normalize_compare_text(str(expected.get("body") or ""))
+        actual_body = _html_to_compare_text(str(actual.get("email_body") or actual_step.get("email_body") or ""))
+        if expected_body != actual_body:
+            errors.append(f"Email {step_number} variant {label} body changed or lost spacing")
+    return errors
+
+
+def _html_to_compare_text(value: str) -> str:
+    text = re.sub(r"(?i)<br\s*/?>", "\n", value or "")
+    text = re.sub(r"(?i)</(?:p|div)\s*>", "\n", text)
+    text = re.sub(r"(?i)<(?:p|div)[^>]*>", "", text)
+    text = re.sub(r"<[^>]+>", "", text)
+    return _normalize_compare_text(unescape(text))
+
+
+def _normalize_compare_text(value: str) -> str:
+    text = (value or "").replace("\r\n", "\n").replace("\r", "\n")
+    text = text.replace("\xa0", " ")
+    lines = [line.rstrip() for line in text.split("\n")]
+    return "\n".join(lines).strip()
+
+
+def _label_for_index(index: int) -> str:
+    return chr(ord("A") + index) if index < 26 else f"V{index + 1}"
 
 
 def _resolve_client_id(doc: dict, workspace: dict) -> int | None:

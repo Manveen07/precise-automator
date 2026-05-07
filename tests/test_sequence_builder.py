@@ -6,8 +6,16 @@ def test_format_email_body_for_smartlead_preserves_tokens():
     formatted = format_email_body_for_smartlead(body)
     assert "{{first_name}}" in formatted
     assert "{a|b}" in formatted
-    assert "<br><br>%signature%" in formatted
+    assert "Line two {a|b}<br>%signature%" in formatted
     assert "\n" not in formatted
+
+
+def test_format_email_body_for_smartlead_preserves_visible_text_spacing_and_literals():
+    body = "Hi {{first_name}},\n\n1.  <>\n\n  indented  words"
+    formatted = format_email_body_for_smartlead(body)
+
+    assert "1. &nbsp;&lt;&gt;" in formatted
+    assert "<br><br>&nbsp;&nbsp;indented &nbsp;words" in formatted
 
 
 def test_build_smartlead_sequences_uses_seq_variants_and_blank_followup_subjects():

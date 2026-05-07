@@ -2,10 +2,14 @@ import re
 
 SUBJECT_RE = re.compile(r"^\s*(\d+)\.\s+(.+?)\s*$", re.MULTILINE)
 STEP_RE = re.compile(r"(?im)^\s*Step\s*#?\s*(\d+)\s*$")
-EMAIL_STEP_RE = re.compile(r"(?im)^\s*Email\s*#?\s*(\d+)\s*$")
-VARIANT_RE = re.compile(r"(?im)^\s*(?:V|Version)\s*#?\s*(\d+)\s*$")
+EMAIL_STEP_RE = re.compile(r"(?im)^\s*Email\s*#?\s*(\d+)\b[^\n]*$")
+VARIANT_RE = re.compile(r"(?im)^\s*(?:V\s*#?\s*\d+|Version\s*#?\s*(?:[A-Z]|\d+))\b[^\n]*:?\s*$")
 SPINTAX_RE = re.compile(r"(?im)^\s*(?:-+\s*)?Spintax(?:\s+Version)?(?:\s*-+)?\s*:?\s*$")
-SUBJECT_HEADING_RE = re.compile(r"(?im)^\s*Subject\s+Line(?:\s+Options?)?\s*:?\s*$")
+SUBJECT_HEADING_RE = re.compile(r"(?im)^\s*Subject\s+Lines?(?:\s+Options?)?\s*:?\s*$")
+NON_EMAIL_TAIL_RE = re.compile(
+    r"(?im)^\s*(?:Unique combinations\s*:.*|LinkedIn\s*:.*|LI\s*:.*|Connection Request\b.*|DM\d*\b.*)$"
+)
+CHANNEL_TAIL_RE = re.compile(r"(?im)^\s*(?:LinkedIn\s*:.*|LI\s*:.*|Connection Request\b.*|DM\d*\b.*)$")
 
 
 def extract_subjects(text: str) -> list[str]:
@@ -15,11 +19,26 @@ def extract_subjects(text: str) -> list[str]:
 def _copy_after_last_spintax_marker(text: str) -> str:
     matches = list(SPINTAX_RE.finditer(text))
     if not matches:
-        return text.strip()
-    return text[matches[-1].end() :].strip()
+        return _strip_non_email_tail(text).strip()
+    return _strip_non_email_tail(text[matches[-1].end() :]).strip()
+
+
+def _strip_non_email_tail(text: str) -> str:
+    match = NON_EMAIL_TAIL_RE.search(text)
+    if not match:
+        return text.rstrip()
+    return text[: match.start()].rstrip()
+
+
+def _strip_channel_tail(text: str) -> str:
+    match = CHANNEL_TAIL_RE.search(text)
+    if not match:
+        return text.rstrip()
+    return text[: match.start()].rstrip()
 
 
 def _split_variants(step_text: str) -> list[dict]:
+    step_text = _strip_channel_tail(step_text)
     matches = list(VARIANT_RE.finditer(step_text))
     if not matches:
         body = _copy_after_last_spintax_marker(step_text)
@@ -93,13 +112,12 @@ def _parse_repository_campaigns(text: str) -> tuple[list[dict], list[str]]:
         else:
             section_end = len(text)
         section = text[section_start:section_end]
-        email_matches = list(EMAIL_STEP_RE.finditer(section))
-        if not email_matches:
+        subjects, body_start = _extract_subject_block(section)
+        email_blocks = _repository_email_blocks(section[body_start:])
+        if not email_blocks:
             continue
 
-        first_email_start = email_matches[0].start()
-        subjects = extract_subjects(section[:first_email_start])
-        steps, warnings = _parse_email_steps(section, email_matches)
+        steps, warnings = _parse_email_blocks(email_blocks)
         all_warnings.extend(warnings)
         if subjects and steps:
             campaigns.append(
@@ -110,6 +128,54 @@ def _parse_repository_campaigns(text: str) -> tuple[list[dict], list[str]]:
                 }
             )
     return campaigns, all_warnings
+
+
+def _extract_subject_block(section: str) -> tuple[list[str], int]:
+    subjects: list[str] = []
+    position = 0
+    for line in section.splitlines(keepends=True):
+        match = re.match(r"^\s*(\d+)\.\s+(.+?)\s*$", line)
+        if match:
+            subjects.append(match.group(2).strip())
+            position += len(line)
+            continue
+        if not line.strip():
+            position += len(line)
+            continue
+        if subjects:
+            break
+        position += len(line)
+    return subjects, position
+
+
+def _repository_email_blocks(section: str) -> list[tuple[int, str]]:
+    matches = list(EMAIL_STEP_RE.finditer(section))
+    blocks: list[tuple[int, str]] = []
+    if matches and section[: matches[0].start()].strip():
+        blocks.append((1, section[: matches[0].start()]))
+    for idx, match in enumerate(matches):
+        start = match.end()
+        end = matches[idx + 1].start() if idx + 1 < len(matches) else len(section)
+        blocks.append((int(match.group(1)), section[start:end]))
+    if not matches and section.strip():
+        blocks.append((1, section))
+    return blocks
+
+
+def _parse_email_blocks(email_blocks: list[tuple[int, str]]) -> tuple[list[dict], list[str]]:
+    steps: list[dict] = []
+    warnings: list[str] = []
+    for step_number, block in email_blocks:
+        variants = _split_variants(block)
+        if variants:
+            steps.append({"step_number": step_number, "body_variants": variants})
+        else:
+            steps.append({"step_number": step_number, "body_variants": []})
+            warnings.append(
+                f"Email {step_number} produced no variants - check that the Spintax marker "
+                f"has body text under it."
+            )
+    return steps, warnings
 
 
 def _parse_email_steps(section: str, email_matches: list[re.Match]) -> tuple[list[dict], list[str]]:
@@ -142,6 +208,8 @@ def _heading_name_before(text: str, position: int) -> str | None:
 
 def _looks_like_metadata_line(line: str) -> bool:
     if re.match(r"^\d+\.\s+", line):
+        return True
+    if EMAIL_STEP_RE.match(line):
         return True
     if line.lower().startswith("audience:"):
         return True

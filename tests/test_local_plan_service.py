@@ -35,7 +35,7 @@ def test_build_campaign_plan_from_parsed_repository_input():
     assert "%signature%" in plan["sequence"][0]["variants"][0]["body"]
 
 
-def test_build_campaign_plan_notes_truncation_and_skipped_empty_steps():
+def test_build_campaign_plan_includes_all_email_steps_and_notes_skipped_empty_steps():
     plan = build_campaign_plan_from_input(
         {
             "workspace_key": "smartlead_mcp",
@@ -55,7 +55,7 @@ def test_build_campaign_plan_notes_truncation_and_skipped_empty_steps():
         }
     )
 
-    assert len(plan["sequence"]) == 3
+    assert len(plan["sequence"]) == 4
+    assert [step["step_number"] for step in plan["sequence"]] == [1, 3, 4, 5]
     assert "Parser warning." in plan["notes_for_operator"]
-    assert "Input had 5 steps; V1 draft includes only the first 4 steps." in plan["notes_for_operator"]
     assert "Skipped step 2 because no body variants were parsed." in plan["notes_for_operator"]

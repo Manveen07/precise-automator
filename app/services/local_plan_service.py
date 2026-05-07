@@ -8,11 +8,9 @@ def build_campaign_plan_from_input(raw_input: dict, note: str | None = None) -> 
     max_new_leads_per_day = int(raw_input.get("max_new_leads_per_day") or 100)
     parser_warnings = parsed.get("warnings") or []
     plan_warnings = []
-    if len(steps) > 4:
-        plan_warnings.append(f"Input had {len(steps)} steps; V1 draft includes only the first 4 steps.")
 
     sequence = []
-    for step in steps[:4]:
+    for step in steps:
         step_number = int(step["step_number"])
         body_variants = step.get("body_variants") or []
         variants = _build_step_variants(step_number, subjects, body_variants)

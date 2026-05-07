@@ -150,6 +150,75 @@ One question.
     assert parsed["warnings"] == []
 
 
+def test_parse_repository_with_day_suffixes_version_letters_and_linkedin_blocks():
+    text = """
+Insurance Vertical
+Email 1 (Day-0)
+Subject Lines
+1. New Movers
+2. Shared Mail
+
+Version A (Sam's Original)
+Plain copy ignored.
+
+--- SPINTAX VERSION ---
+
+{Hi|Hey} {{first_name}},
+
+Email one A.
+%signature%
+
+Unique combinations: 2 x 1 = 2
+
+Version B (Suggested Copy)
+
+--- SPINTAX VERSION ---
+
+{Hi|Hey} {{first_name}},
+
+Email one B.
+%signature%
+
+Unique combinations: 2 x 1 = 2
+
+LinkedIn : Connection Request (Day-2)
+This should not become email copy.
+
+Email 2 : Follow-Up (Day-4)
+
+--- SPINTAX VERSION ---
+
+Email two.
+%signature%
+
+Email 3 : Deadline Nudge (Day-7)
+
+--- SPINTAX VERSION ---
+
+Email three.
+%signature%
+
+LinkedIn : DM1 (1 week after connection)
+This should also be ignored.
+"""
+    parsed = parse_messaging_file(text)
+
+    assert parsed["source_format"] == "repository"
+    assert parsed["selected_campaign"] == "Insurance Vertical"
+    assert parsed["subjects"] == ["New Movers", "Shared Mail"]
+    assert [step["step_number"] for step in parsed["steps"]] == [1, 2, 3]
+    assert len(parsed["steps"][0]["body_variants"]) == 2
+    bodies = [
+        variant["body"]
+        for step in parsed["steps"]
+        for variant in step["body_variants"]
+    ]
+    assert any("Email one A." in body for body in bodies)
+    assert any("Email one B." in body for body in bodies)
+    assert all("LinkedIn" not in body for body in bodies)
+    assert all("Unique combinations" not in body for body in bodies)
+
+
 def test_repository_sequence_name_miss_warns_before_falling_back_to_first():
     text = """
 Benchmark
