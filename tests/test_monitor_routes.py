@@ -39,8 +39,62 @@ def test_smartlead_monitor_classifies_pause_and_posts_slack(monkeypatch):
 
     assert response.status_code == 200
     assert response.json()["classification"] == "likely_bounce_protection"
+    assert response.json()["alert_posted"] is True
     assert posted["campaign_id"] == 2939345
     assert posted["classification"].kind == "likely_bounce_protection"
+
+
+def test_smartlead_monitor_does_not_post_slack_for_active_status(monkeypatch):
+    posted = {}
+
+    async def fake_find_account(campaign_id):
+        return CampaignAccount("darlean", "Darlean", "key"), {"name": "Environmental consulting firms", "status": "ACTIVE"}
+
+    async def fake_post_alert(**kwargs):
+        posted.update(kwargs)
+
+    monkeypatch.setattr(monitor.settings, "SMARTLEAD_WEBHOOK_SECRET", "")
+    monkeypatch.setattr(monitor, "find_account_for_campaign", fake_find_account)
+    monkeypatch.setattr(monitor, "post_campaign_status_alert", fake_post_alert)
+
+    response = TestClient(app).post(
+        "/api/monitor/smartlead",
+        json={"campaign_id": 123, "status": "ACTIVE", "campaign_name": "Environmental consulting firms"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ACTIVE"
+    assert response.json()["classification"] is None
+    assert response.json()["alert_posted"] is False
+    assert posted == {}
+
+
+def test_smartlead_monitor_does_not_post_slack_for_generic_pause(monkeypatch):
+    posted = {}
+
+    async def fake_find_account(campaign_id):
+        return CampaignAccount("darlean", "Darlean", "key"), {"name": "Generic Pause", "status": "PAUSED"}
+
+    async def fake_classify_pause(*, campaign_id, account, webhook_payload):
+        return BounceClassification("generic_pause", 0.01, 100, 1)
+
+    async def fake_post_alert(**kwargs):
+        posted.update(kwargs)
+
+    monkeypatch.setattr(monitor.settings, "SMARTLEAD_WEBHOOK_SECRET", "")
+    monkeypatch.setattr(monitor, "find_account_for_campaign", fake_find_account)
+    monkeypatch.setattr(monitor, "classify_pause", fake_classify_pause)
+    monkeypatch.setattr(monitor, "post_campaign_status_alert", fake_post_alert)
+
+    response = TestClient(app).post(
+        "/api/monitor/smartlead",
+        json={"campaign_id": 123, "status": "PAUSED", "campaign_name": "Generic Pause"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["classification"] == "generic_pause"
+    assert response.json()["alert_posted"] is False
+    assert posted == {}
 
 
 def test_slack_resume_action_calls_smartlead(monkeypatch):

@@ -42,7 +42,8 @@ async def smartlead_status_webhook(request: Request):
     if status.upper() == "PAUSED":
         classification = await classify_pause(campaign_id=campaign_id, account=account, webhook_payload=payload)
 
-    if status:
+    alert_posted = False
+    if status.upper() == "PAUSED" and classification and classification.is_bounce_protection:
         await post_campaign_status_alert(
             campaign_id=campaign_id,
             campaign_name=campaign_name,
@@ -50,6 +51,7 @@ async def smartlead_status_webhook(request: Request):
             account=account,
             classification=classification,
         )
+        alert_posted = True
 
     return {
         "ok": True,
@@ -57,6 +59,7 @@ async def smartlead_status_webhook(request: Request):
         "status": status.upper() if status else None,
         "account": account.workspace_name,
         "classification": classification.kind if classification else None,
+        "alert_posted": alert_posted,
     }
 
 
