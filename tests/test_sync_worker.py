@@ -70,7 +70,7 @@ def test_sequence_sync_mismatches_accepts_equivalent_smartlead_html():
                 {
                     "variant_label": "A",
                     "subject": "New Movers",
-                    "email_body": "Hi {{first_name}},<br><br>1. &nbsp;&lt;&gt;<br>%signature%",
+                    "email_body": "Hi {{first_name}},<br><br>1. &nbsp;&lt;&gt;<br><br>%signature%",
                 }
             ],
         }

@@ -23,7 +23,7 @@ import re
 import httpx
 
 from app.config import get_workspace_config, infer_smartlead_client
-from app.services.sequence_builder import build_smartlead_sequences
+from app.services.sequence_builder import build_smartlead_sequences, format_email_body_for_smartlead, format_subject_for_smartlead
 from app.services.smartlead_service import SmartleadService
 from app.services.validation_service import validate_campaign_plan
 from app import store
@@ -178,11 +178,11 @@ def _variant_sync_mismatches(step_number: int, expected_variants: list[dict], ac
         if not actual:
             errors.append(f"Email {step_number} variant {label} missing in Smartlead")
             continue
-        expected_subject = _normalize_compare_text(str(expected.get("subject") or ""))
+        expected_subject = format_subject_for_smartlead(str(expected.get("subject") or ""))
         actual_subject = _normalize_compare_text(str(actual.get("subject") or actual_step.get("subject") or ""))
         if expected_subject != actual_subject:
             errors.append(f"Email {step_number} variant {label} subject changed")
-        expected_body = _normalize_compare_text(str(expected.get("body") or ""))
+        expected_body = _html_to_compare_text(format_email_body_for_smartlead(str(expected.get("body") or "")))
         actual_body = _html_to_compare_text(str(actual.get("email_body") or actual_step.get("email_body") or ""))
         if expected_body != actual_body:
             errors.append(f"Email {step_number} variant {label} body changed or lost spacing")
