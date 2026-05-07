@@ -16,14 +16,18 @@ operator immediately, so this runs after the response is sent.
 """
 
 import asyncio
-from html import unescape
 import json
 import re
 
 import httpx
 
 from app.config import get_workspace_config, infer_smartlead_client
-from app.services.sequence_builder import build_smartlead_sequences, format_email_body_for_smartlead, format_subject_for_smartlead
+from app.services.sequence_builder import (
+    build_smartlead_sequences,
+    format_email_body_for_smartlead,
+    format_subject_for_smartlead,
+    smartlead_html_to_text,
+)
 from app.services.smartlead_service import SmartleadService
 from app.services.validation_service import validate_campaign_plan
 from app import store
@@ -190,11 +194,7 @@ def _variant_sync_mismatches(step_number: int, expected_variants: list[dict], ac
 
 
 def _html_to_compare_text(value: str) -> str:
-    text = re.sub(r"(?i)<br\s*/?>", "\n", value or "")
-    text = re.sub(r"(?i)</(?:p|div)\s*>", "\n", text)
-    text = re.sub(r"(?i)<(?:p|div)[^>]*>", "", text)
-    text = re.sub(r"<[^>]+>", "", text)
-    return _normalize_compare_text(unescape(text))
+    return smartlead_html_to_text(value)
 
 
 def _normalize_compare_text(value: str) -> str:

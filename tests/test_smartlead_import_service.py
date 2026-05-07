@@ -32,3 +32,30 @@ def test_build_campaign_plan_from_smartlead_maps_sequences_and_html_body():
     assert plan["schedule"]["end_hour"] == "18:00"
     assert plan["sequence"][0]["variants"][0]["subject"] == "Referral Dependence"
     assert plan["sequence"][0]["variants"][0]["body"] == "Hi {{first_name}},\n\nWant me to hold you a seat?\n\n%signature%"
+
+
+def test_build_campaign_plan_from_smartlead_normalizes_html_nbsp_and_subject_spacing():
+    plan = build_campaign_plan_from_smartlead(
+        workspace_key="preciselead",
+        campaign={"id": 1, "name": "Imported"},
+        sequences=[
+            {
+                "seq_number": 1,
+                "sequence_variants": [
+                    {
+                        "variant_label": "A",
+                        "subject": "\ufeffReferral\u00a0Dependence\nTest",
+                        "email_body": (
+                            "<p>Hi&nbsp;{{first_name}},</p>"
+                            "<div>Line&nbsp;&nbsp;two</div>"
+                            "<p>%Signature%</p>"
+                        ),
+                    }
+                ],
+            }
+        ],
+    )
+
+    variant = plan["sequence"][0]["variants"][0]
+    assert variant["subject"] == "Referral Dependence Test"
+    assert variant["body"] == "Hi {{first_name}},\nLine  two\n%signature%"

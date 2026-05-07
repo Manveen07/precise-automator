@@ -1,6 +1,7 @@
-from html import unescape
 import re
 import string
+
+from app.services.sequence_builder import format_subject_for_smartlead, smartlead_html_to_text
 
 
 def build_campaign_plan_from_smartlead(
@@ -59,7 +60,7 @@ def _build_sequence_step(step: dict) -> dict:
         variants.append(
             {
                 "variant_label": str(variant.get("variant_label") or _label_for_index(idx)),
-                "subject": str(variant.get("subject") or step.get("subject") or ""),
+                "subject": format_subject_for_smartlead(str(variant.get("subject") or step.get("subject") or "")),
                 "body": _canonicalize_body(body),
             }
         )
@@ -69,7 +70,7 @@ def _build_sequence_step(step: dict) -> dict:
             variants.append(
                 {
                     "variant_label": "A",
-                    "subject": str(step.get("subject") or ""),
+                    "subject": format_subject_for_smartlead(str(step.get("subject") or "")),
                     "body": _canonicalize_body(body),
                 }
             )
@@ -81,12 +82,7 @@ def _build_sequence_step(step: dict) -> dict:
 
 
 def _html_to_text(value: str) -> str:
-    text = re.sub(r"(?i)<br\s*/?>", "\n", value or "")
-    text = re.sub(r"(?i)</p\s*>", "\n", text)
-    text = re.sub(r"(?i)<p[^>]*>", "", text)
-    text = re.sub(r"<[^>]+>", "", text)
-    text = unescape(text)
-    return re.sub(r"\n{3,}", "\n\n", text).strip()
+    return smartlead_html_to_text(value)
 
 
 def _canonicalize_body(body: str) -> str:

@@ -1,4 +1,9 @@
-from app.services.sequence_builder import build_smartlead_sequences, format_email_body_for_smartlead, format_subject_for_smartlead
+from app.services.sequence_builder import (
+    build_smartlead_sequences,
+    format_email_body_for_smartlead,
+    format_subject_for_smartlead,
+    smartlead_html_to_text,
+)
 
 
 def test_format_email_body_for_smartlead_preserves_tokens():
@@ -41,6 +46,12 @@ def test_format_subject_for_smartlead_flattens_whitespace():
     subject = "\ufeffNew\u00a0Movers\nAcquisition\tTest"
 
     assert format_subject_for_smartlead(subject) == "New Movers Acquisition Test"
+
+
+def test_smartlead_html_to_text_handles_paragraph_tags_and_nbsp():
+    html = "<p>Hi&nbsp;{{first_name}},</p><div>Line&nbsp;&nbsp;two</div><p>%Signature%</p>"
+
+    assert smartlead_html_to_text(html) == "Hi {{first_name}},\nLine  two\n%signature%"
 
 
 def test_build_smartlead_sequences_uses_seq_variants_and_blank_followup_subjects():

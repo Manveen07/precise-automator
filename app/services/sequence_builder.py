@@ -1,7 +1,7 @@
 import re
 import string
 from collections.abc import Sequence
-from html import escape
+from html import escape, unescape
 
 
 def format_email_body_for_smartlead(body: str) -> str:
@@ -26,6 +26,20 @@ def format_subject_for_smartlead(subject: str) -> str:
     subject = re.sub(r"[\u200b-\u200d\ufeff]", "", subject)
     subject = subject.replace("\u00a0", " ").replace("\u2028", " ").replace("\u2029", " ")
     return re.sub(r"\s+", " ", subject).strip()
+
+
+def smartlead_html_to_text(value: str) -> str:
+    text = re.sub(r"(?i)<br\s*/?>", "\n", value or "")
+    text = re.sub(r"(?i)</(?:p|div)\s*>", "\n", text)
+    text = re.sub(r"(?i)<(?:p|div)[^>]*>", "", text)
+    text = re.sub(r"<[^>]+>", "", text)
+    text = unescape(text)
+    text = re.sub(r"[\u200b-\u200d\ufeff]", "", text)
+    text = text.replace("\u00a0", " ").replace("\u2028", "\n").replace("\u2029", "\n\n")
+    text = text.replace("%Signature%", "%signature%").replace("%SIGNATURE%", "%signature%")
+    lines = [line.rstrip() for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
+    text = "\n".join(lines)
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
 def _preserve_visible_spacing(body: str) -> str:

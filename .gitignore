@@ -14,3 +14,4 @@ dist/
 build/
 node_modules/
 debug_anthropic/
+test_smartlead_api.py
