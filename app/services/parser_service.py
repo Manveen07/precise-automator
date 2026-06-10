@@ -10,6 +10,24 @@ NON_EMAIL_TAIL_RE = re.compile(
     r"(?im)^\s*(?:Unique combinations\s*:.*|LinkedIn\s*:.*|LI\s*:.*|Connection Request\b.*|DM\d*\b.*)$"
 )
 CHANNEL_TAIL_RE = re.compile(r"(?im)^\s*(?:LinkedIn\s*:.*|LI\s*:.*|Connection Request\b.*|DM\d*\b.*)$")
+STEP_CHANNEL_RE = re.compile(
+    r"(?im)^\s*Step\s*#?\s*(\d+)\s*[—:\-–]\s*(Email|LinkedIn|LI|DM|Connection\s*Request)\b[^\n]*$"
+)
+MESSAGE_BODY_RE = re.compile(r"(?im)^\s*Message\s+Body\s*:?\s*$")
+DAY_RE = re.compile(r"(?i)Day\s*[-:]?\s*(\d+)")
+# Google Docs .txt exports leave comment anchors ("[a]") inline and dump the
+# comment definitions at the end. Strip both so they never reach email copy.
+COMMENT_DEFINITION_RE = re.compile(r"(?m)^[ \t]*\[[a-z0-9]{1,2}\][^\n]*$")
+ASSIGNED_LINE_RE = re.compile(r"(?im)^[ \t]*_Assigned to[^\n]*$")
+CC_LINE_RE = re.compile(r"(?im)^[ \t]*CC:\s*@[^\n]*$")
+INLINE_COMMENT_MARKER_RE = re.compile(r"\[(?:[a-z]{1,2}|\d{1,3})\]")
+
+
+def _strip_doc_comments(text: str) -> str:
+    text = COMMENT_DEFINITION_RE.sub("", text)
+    text = ASSIGNED_LINE_RE.sub("", text)
+    text = CC_LINE_RE.sub("", text)
+    return INLINE_COMMENT_MARKER_RE.sub("", text)
 
 
 def extract_subjects(text: str) -> list[str]:
@@ -55,6 +73,11 @@ def _split_variants(step_text: str) -> list[dict]:
 
 
 def parse_messaging_file(text: str, selected_sequence_name: str | None = None) -> dict:
+    text = _strip_doc_comments(text)
+    step_channel = _parse_step_channel_format(text)
+    if step_channel is not None:
+        return step_channel
+
     repository_campaigns, parse_warnings = _parse_repository_campaigns(text)
     if repository_campaigns:
         selected, select_warnings = _select_campaign(repository_campaigns, selected_sequence_name)
@@ -86,6 +109,87 @@ def parse_messaging_file(text: str, selected_sequence_name: str | None = None) -
         )
     subject_text = text[: step_matches[0].start()] if step_matches else text
     return {"source_format": source_format, "subjects": extract_subjects(subject_text), "steps": steps, "campaigns": [], "warnings": []}
+
+
+def _parse_step_channel_format(text: str) -> dict | None:
+    """Parse 'Step N — Email/LinkedIn (Day X)' campaigns (e.g. Google Docs exports).
+
+    Steps are interleaved across channels. Only email steps go to Smartlead;
+    each non-email step is dropped with a warning so nothing fails silently.
+    Email steps are renumbered sequentially (1..N) for valid Smartlead sequences.
+    """
+    matches = list(STEP_CHANNEL_RE.finditer(text))
+    if not matches:
+        return None
+
+    subjects = _extract_subjects_after_heading(text)
+    steps: list[dict] = []
+    warnings: list[str] = []
+    email_number = 0
+    for idx, match in enumerate(matches):
+        channel_keyword = match.group(2)
+        start = match.end()
+        end = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
+        block = text[start:end]
+        if channel_keyword.lower().startswith("email"):
+            email_number += 1
+            variants = _split_variants(_strip_email_block_preamble(block))
+            day_match = DAY_RE.search(match.group(0))
+            day = int(day_match.group(1)) if day_match else None
+            steps.append({"step_number": email_number, "day": day, "body_variants": variants})
+            if not variants:
+                warnings.append(f"Email step {email_number} produced no body text.")
+        else:
+            warnings.append(
+                f"Skipped Step {match.group(1)} ({channel_keyword}) - not an email "
+                f"channel; only email steps are synced to Smartlead."
+            )
+
+    name = _document_title(text)
+    return {
+        "source_format": "repository",
+        "selected_campaign": name,
+        "subjects": subjects,
+        "steps": steps,
+        "campaigns": [{"name": name, "subjects": subjects, "steps": steps}],
+        "warnings": warnings,
+    }
+
+
+def _strip_email_block_preamble(block: str) -> str:
+    """Drop the 'Message Body:' label and any leading subject-line block."""
+    message_body = MESSAGE_BODY_RE.search(block)
+    if message_body:
+        return block[message_body.end() :]
+
+    subject_heading = SUBJECT_HEADING_RE.search(block)
+    if subject_heading:
+        lines = block[subject_heading.end() :].splitlines(keepends=True)
+        position = 0
+        for line in lines:
+            stripped = line.strip()
+            if not stripped or re.match(r"^\d+\.\s+", stripped):
+                position += 1
+                continue
+            break
+        return "".join(lines[position:])
+    return block
+
+
+def _extract_subjects_after_heading(text: str) -> list[str]:
+    heading = SUBJECT_HEADING_RE.search(text)
+    if not heading:
+        return []
+    subjects, _ = _extract_subject_block(text[heading.end() :])
+    return subjects
+
+
+def _document_title(text: str) -> str | None:
+    for line in text.splitlines():
+        candidate = line.strip().lstrip("﻿").strip()
+        if candidate and not candidate.startswith("*") and not _looks_like_metadata_line(candidate):
+            return candidate
+    return None
 
 
 def _select_campaign(campaigns: list[dict], selected_sequence_name: str | None) -> tuple[dict, list[str]]:

@@ -219,6 +219,147 @@ This should also be ignored.
     assert all("Unique combinations" not in body for body in bodies)
 
 
+def test_parse_step_prefixed_mixed_channel_keeps_email_skips_linkedin():
+    """Google-Docs 'Step N — Email/LinkedIn' format with interleaved channels.
+
+    Before the fix: the whole campaign collapsed into one email body because the
+    step headers start with 'Step', not 'Email'. After: email steps are isolated
+    and renumbered, LinkedIn steps are dropped with a warning each.
+    """
+    text = """Health Systems Campaign: 5-Step Sequence
+
+* Target: Hospital systems
+* Email Sender: Scott
+
+Step 1 — Email (Day 0)
+
+Subject Line Options:
+
+1. Cone Health Perspective
+2. Complex Care Perception
+3. Brand Preference Gap
+4. Regional Care Choice
+
+Message Body:
+
+Hi {{first_name}},
+
+A few years ago, Cone Health faced a problem.
+%signature%
+
+Step 2 — LinkedIn (Connection Request - Optional) (Day 0)
+
+{{first_name}}, I led the strategy work behind Cone Health.
+
+Step 3 — Email #2 (Day 3)
+
+{{first_name}},
+
+One pattern we saw with Cone Health is the media mix.
+%signature%
+
+Step 4 — LinkedIn DM #1 (3 Hours after Connection)
+
+Hey {{first_name}}, wanted to share a thought.
+
+Step 5 — LinkedIn DM #2 (Final Touch)
+
+The media audit is one lens.
+"""
+    parsed = parse_messaging_file(text)
+
+    assert parsed["selected_campaign"] == "Health Systems Campaign: 5-Step Sequence"
+    assert parsed["subjects"] == [
+        "Cone Health Perspective",
+        "Complex Care Perception",
+        "Brand Preference Gap",
+        "Regional Care Choice",
+    ]
+
+    # Only the two email steps survive, renumbered sequentially.
+    assert [step["step_number"] for step in parsed["steps"]] == [1, 2]
+
+    body_one = parsed["steps"][0]["body_variants"][0]["body"]
+    body_two = parsed["steps"][1]["body_variants"][0]["body"]
+    assert body_one.startswith("Hi {{first_name}},")
+    assert "Message Body" not in body_one
+    assert "Cone Health Perspective" not in body_one  # subject lines stripped from body
+    assert body_two.startswith("{{first_name}},")
+    assert "media mix" in body_two
+
+    # No LinkedIn copy leaked into any email body.
+    bodies = [v["body"] for s in parsed["steps"] for v in s["body_variants"]]
+    assert all("LinkedIn" not in b for b in bodies)
+    assert all("media audit is one lens" not in b for b in bodies)
+
+    # Each skipped LinkedIn step is reported, not silently dropped.
+    assert len(parsed["warnings"]) == 3
+    assert all("LinkedIn" in w for w in parsed["warnings"])
+    assert "Step 2" in parsed["warnings"][0]
+
+
+def test_doc_comment_markers_and_definitions_are_stripped():
+    """Google-Docs comment anchors [a]/[b] and the footnote dump must not reach copy."""
+    text = """Health Campaign[a]
+
+Step 1 — Email (Day 0)
+
+Subject Line Options:
+1. Subject One
+
+Message Body:
+
+Hi {{first_name}},
+No access needed.[b]
+%signature%
+
+Step 2 — Email (Day 3)
+
+{{first_name}},
+Second email.[c]
+%signature%
+
+[a]@ken@x.com reviewed, no red flags.
+CC: @boss@x.com
+_Assigned to ken@x.com_
+[b]Flag: reads like we built it for them.
+[c]Hope this version works.
+"""
+    parsed = parse_messaging_file(text)
+    bodies = " ".join(v["body"] for s in parsed["steps"] for v in s["body_variants"])
+
+    assert "[a]" not in bodies and "[b]" not in bodies and "[c]" not in bodies
+    assert "Flag:" not in bodies          # footnote-definition prose gone
+    assert "Assigned to" not in bodies
+    assert "@ken@x.com" not in bodies
+    assert "No access needed." in bodies  # surrounding copy intact
+    assert "Second email." in bodies
+    assert parsed["selected_campaign"] == "Health Campaign"  # trailing [a] stripped from title
+
+
+def test_step_channel_format_captures_day_offsets():
+    text = """Campaign Title
+
+Step 1 — Email (Day 0)
+Subject Line Options:
+1. Subject One
+
+Message Body:
+Hi {{first_name}}, first.
+%signature%
+
+Step 2 — Email (Day 5)
+{{first_name}}, second.
+%signature%
+
+Step 3 — Email (Day 10)
+{{first_name}}, third.
+%signature%
+"""
+    parsed = parse_messaging_file(text)
+    assert [step.get("day") for step in parsed["steps"]] == [0, 5, 10]
+
+
 def test_repository_sequence_name_miss_warns_before_falling_back_to_first():
     text = """
 Benchmark

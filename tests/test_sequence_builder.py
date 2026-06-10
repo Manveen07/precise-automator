@@ -6,6 +6,23 @@ from app.services.sequence_builder import (
 )
 
 
+def test_format_email_body_repairs_glued_sentences():
+    """Soft-return exports glue sentences: 'care.That'. Insert the missing space."""
+    body = "more complex care.That became the center of our work."
+    formatted = format_email_body_for_smartlead(body)
+    assert "care. That" in formatted
+    assert "care.That" not in formatted
+
+
+def test_format_email_body_does_not_split_abbreviations_decimals_or_domains():
+    """Only split lowercase.Uppercase; leave decimals, abbreviations, domains alone."""
+    body = "We grew 3.5x. Sales in the U.S.A grew. See site.com today."
+    formatted = format_email_body_for_smartlead(body)
+    assert "3.5x" in formatted        # decimal untouched
+    assert "U.S.A" in formatted       # uppercase abbreviation not split
+    assert "site.com" in formatted    # domain untouched
+
+
 def test_format_email_body_for_smartlead_preserves_tokens():
     body = "Hi {{first_name}},\n\nLine two {a|b}\n%Signature%"
     formatted = format_email_body_for_smartlead(body)

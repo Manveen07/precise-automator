@@ -8,6 +8,10 @@ def format_email_body_for_smartlead(body: str) -> str:
     body = body.replace("\r\n", "\n").replace("\r", "\n")
     body = re.sub(r"[\u200b-\u200d\ufeff]", "", body)
     body = body.replace("\u00a0", " ").replace("\u2028", "\n").replace("\u2029", "\n\n")
+    # Repair sentences glued by soft-return exports ("care.That" -> "care. That").
+    # Lowercase-then-uppercase only, so decimals (3.5), abbreviations (U.S.A),
+    # and domains (site.com) are left untouched.
+    body = re.sub(r"(?<=[a-z])([.?!])(?=[A-Z])", r"\1 ", body)
     body = body.replace("%Signature%", "%signature%").replace("%SIGNATURE%", "%signature%")
     body = body.replace("\t", "    ")
     body = "\n".join(line.rstrip() for line in body.split("\n"))

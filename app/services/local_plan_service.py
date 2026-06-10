@@ -10,15 +10,22 @@ def build_campaign_plan_from_input(raw_input: dict, note: str | None = None) -> 
     plan_warnings = []
 
     sequence = []
+    previous_day = None
     for step in steps:
         step_number = int(step["step_number"])
         body_variants = step.get("body_variants") or []
         variants = _build_step_variants(step_number, subjects, body_variants)
         if variants:
+            day = step.get("day")
+            if isinstance(day, int):
+                delay_days = 0 if previous_day is None else max(0, day - previous_day)
+                previous_day = day
+            else:
+                delay_days = _default_delay_days(step_number)
             sequence.append(
                 {
                     "step_number": step_number,
-                    "delay_days": _default_delay_days(step_number),
+                    "delay_days": delay_days,
                     "variants": variants,
                 }
             )

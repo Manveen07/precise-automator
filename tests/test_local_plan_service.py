@@ -1,6 +1,41 @@
 from app.services.local_plan_service import build_campaign_plan_from_input
 
 
+def test_delay_days_derived_from_parsed_day_offsets():
+    plan = build_campaign_plan_from_input(
+        {
+            "workspace_key": "w",
+            "campaign_name": "c",
+            "parsed_messaging": {
+                "subjects": ["S"],
+                "steps": [
+                    {"step_number": 1, "day": 0, "body_variants": [{"variant_label": "A", "body": "one"}]},
+                    {"step_number": 2, "day": 5, "body_variants": [{"variant_label": "A", "body": "two"}]},
+                    {"step_number": 3, "day": 10, "body_variants": [{"variant_label": "A", "body": "three"}]},
+                ],
+            },
+        }
+    )
+    assert [step["delay_days"] for step in plan["sequence"]] == [0, 5, 5]
+
+
+def test_delay_days_falls_back_to_defaults_without_day():
+    plan = build_campaign_plan_from_input(
+        {
+            "workspace_key": "w",
+            "campaign_name": "c",
+            "parsed_messaging": {
+                "subjects": ["S"],
+                "steps": [
+                    {"step_number": 1, "body_variants": [{"variant_label": "A", "body": "one"}]},
+                    {"step_number": 2, "body_variants": [{"variant_label": "A", "body": "two"}]},
+                ],
+            },
+        }
+    )
+    assert [step["delay_days"] for step in plan["sequence"]] == [0, 3]
+
+
 def test_build_campaign_plan_from_parsed_repository_input():
     plan = build_campaign_plan_from_input(
         {
