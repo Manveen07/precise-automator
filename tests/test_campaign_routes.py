@@ -812,3 +812,123 @@ def test_sync_rejects_when_validation_errors_exist(client):
     )
     response = client.post(f"/api/campaigns/{doc['_id']}/sync")
     assert response.status_code == 400
+
+
+# ---- Inbox selection ---- #
+
+
+def _inbox_row(**overrides):
+    base = {
+        "Client": "PRECISE_LEADS",
+        "Email": "a@x.com",
+        "Provider": "Gmail",
+        "Account ID": "1001",
+        "Availability": "FREE",
+        "Busy Reason": "",
+        "# Campaigns": 0,
+        "Avail. Capacity": 10,
+        "Capacity Left": 10,
+        "Warmup State": "ramped",
+        "Warmup Rep %": "100%",
+        "Test Status": "inbox",
+        "Test Date": "2026-06-18",
+    }
+    base.update(overrides)
+    return base
+
+
+def _inbox_campaign():
+    return store.insert_campaign(
+        workspace_key="preciselead",
+        campaign_name="Inbox Test",
+        raw_input={"workspace_key": "preciselead", "campaign_name": "Inbox Test", "parsed_messaging": {}},
+        plan={
+            "workspace_key": "preciselead",
+            "campaign_name": "Inbox Test",
+            "template_family": "cold_email_standard_v1",
+            "schedule": {"max_new_leads_per_day": 25},
+            "settings": {},
+            "inbox_selection": {"mode": "skip", "email_account_ids": []},
+            "sequence": [
+                {"step_number": 1, "delay_days": 0, "variants": [{"variant_label": "A", "subject": "Hi", "body": "Body"}]},
+            ],
+            "approval_required": True,
+            "notes_for_operator": [],
+        },
+        validation_errors=[],
+    )
+
+
+def test_get_inboxes_recommends_only_the_campaign_client(client, monkeypatch):
+    rows = [
+        _inbox_row(Email="mine@x.com", Client="PRECISE_LEADS", **{"Account ID": "1001"}),
+        _inbox_row(Email="other@x.com", Client="DARLEAN", **{"Account ID": "2002"}),
+    ]
+    monkeypatch.setattr(campaigns, "fetch_inbox_rows", lambda *a, **k: rows)
+    doc = _inbox_campaign()
+
+    response = client.get(f"/api/campaigns/{doc['_id']}/inboxes")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["client"] == "PRECISE_LEADS"
+    emails = {r["email"] for r in body["free_pool"]}
+    assert emails == {"mine@x.com"}
+
+
+def test_get_inboxes_reports_sheet_error_without_crashing(client, monkeypatch):
+    from app.services.inbox_sheet_service import InboxSheetError
+
+    def boom(*a, **k):
+        raise InboxSheetError("sheet down")
+
+    monkeypatch.setattr(campaigns, "fetch_inbox_rows", boom)
+    doc = _inbox_campaign()
+
+    response = client.get(f"/api/campaigns/{doc['_id']}/inboxes")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is False
+    assert "sheet down" in body["error"]
+
+
+def test_post_inbox_selection_persists_account_ids(client, monkeypatch):
+    rows = [
+        _inbox_row(Email="a@x.com", **{"Account ID": "1001"}),
+        _inbox_row(Email="b@x.com", **{"Account ID": "1002"}),
+    ]
+    monkeypatch.setattr(campaigns, "fetch_inbox_rows", lambda *a, **k: rows)
+    doc = _inbox_campaign()
+    campaign_id = str(doc["_id"])
+
+    response = client.post(
+        f"/api/campaigns/{campaign_id}/inbox-selection",
+        data={"account_ids": ["1001", "1002"]},
+    )
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    refreshed = store.get_campaign(campaign_id)
+    selection = refreshed["current_plan"]["inbox_selection"]
+    assert selection["mode"] == "manual_ids"
+    assert selection["email_account_ids"] == [1001, 1002]
+
+
+def test_post_inbox_selection_rejects_ineligible_account(client, monkeypatch):
+    rows = [_inbox_row(Email="a@x.com", **{"Account ID": "1001"})]
+    monkeypatch.setattr(campaigns, "fetch_inbox_rows", lambda *a, **k: rows)
+    doc = _inbox_campaign()
+
+    response = client.post(
+        f"/api/campaigns/{doc['_id']}/inbox-selection",
+        data={"account_ids": ["9999"]},  # not in the client's FREE pool
+    )
+    assert response.status_code == 400
+
+
+def test_campaign_detail_renders_inbox_panel(client):
+    doc = _inbox_campaign()
+    response = client.get(f"/campaigns/{doc['_id']}")
+    assert response.status_code == 200
+    assert 'id="inbox-panel"' in response.text
+    assert f'/api/campaigns/{doc["_id"]}/inboxes' in response.text
+    assert 'id="inbox-form"' in response.text

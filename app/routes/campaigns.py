@@ -27,11 +27,14 @@ from fastapi.templating import Jinja2Templates
 
 from app.config import (
     SMARTLEAD_WORKSPACES,
+    get_sheet_client_for_workspace,
     get_workspace_config,
     infer_smartlead_client,
     settings,
 )
 from app.services.anthropic_service import AnthropicCampaignService
+from app.services.inbox_selection_service import select_inboxes
+from app.services.inbox_sheet_service import InboxSheetError, fetch_inbox_rows
 from app.services.local_plan_service import build_campaign_plan_from_input
 from app.services.parser_service import parse_messaging_file
 from app.services.smartlead_import_service import build_campaign_plan_from_smartlead
@@ -304,6 +307,69 @@ def update_sequence_delay(
     errors = validate_campaign_plan(plan, _active_workspace_keys())
     store.update_plan(campaign_id, plan, errors)
     return _redirect_to_detail(request, campaign_id, {"ok": True, "errors": errors})
+
+
+# ----- Inbox selection ----- #
+
+
+def _campaign_sheet_client(doc: dict, plan: dict) -> str | None:
+    workspace_key = doc.get("smartlead_workspace") or plan.get("workspace_key")
+    return get_sheet_client_for_workspace(workspace_key)
+
+
+@router.get("/api/campaigns/{campaign_id}/inboxes")
+def recommend_campaign_inboxes(campaign_id: str) -> dict:
+    doc = _require_campaign(campaign_id)
+    plan = doc.get("current_plan") or {}
+    client = _campaign_sheet_client(doc, plan)
+    if not client:
+        workspace_key = doc.get("smartlead_workspace") or plan.get("workspace_key")
+        return {"ok": False, "error": f"No inbox-sheet client mapped for workspace '{workspace_key}'."}
+
+    needed = int((plan.get("schedule") or {}).get("max_new_leads_per_day") or 100)
+    try:
+        rows = fetch_inbox_rows()
+    except InboxSheetError as exc:
+        return {"ok": False, "error": str(exc)}
+
+    result = select_inboxes(rows, client=client, needed_daily_volume=needed)
+    result["ok"] = True
+    result["selected_account_ids"] = (plan.get("inbox_selection") or {}).get("email_account_ids") or []
+    return result
+
+
+@router.post("/api/campaigns/{campaign_id}/inbox-selection")
+def update_inbox_selection(
+    campaign_id: str,
+    request: Request,
+    account_ids: list[int] = Form(default=[]),
+):
+    doc = _require_campaign(campaign_id)
+    plan = doc.get("current_plan") or {}
+    if not plan.get("sequence"):
+        raise HTTPException(status_code=400, detail="No local campaign plan to edit.")
+
+    client = _campaign_sheet_client(doc, plan)
+    # Cross-client guard: only attach inboxes that are eligible (FREE) for this client.
+    if account_ids and client:
+        try:
+            rows = fetch_inbox_rows()
+            eligible_ids = {row["account_id"] for row in select_inboxes(rows, client=client, needed_daily_volume=1)["free_pool"]}
+        except InboxSheetError:
+            eligible_ids = None  # sheet unavailable: cannot validate, accept as submitted
+        if eligible_ids is not None:
+            rejected = [account_id for account_id in account_ids if account_id not in eligible_ids]
+            if rejected:
+                raise HTTPException(status_code=400, detail=f"Inboxes not eligible for this client: {rejected}")
+
+    selection = plan.get("inbox_selection") or {}
+    selection["mode"] = "manual_ids" if account_ids else "skip"
+    selection["email_account_ids"] = account_ids
+    plan["inbox_selection"] = selection
+
+    errors = validate_campaign_plan(plan, _active_workspace_keys())
+    store.update_plan(campaign_id, plan, errors)
+    return _redirect_to_detail(request, campaign_id, {"ok": True, "selected": account_ids, "errors": errors})
 
 
 # ----- Sync to Smartlead ----- #

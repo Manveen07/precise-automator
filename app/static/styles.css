@@ -861,3 +861,111 @@ summary:hover { color: var(--accent); }
     width: 100%;
   }
 }
+
+/* ----- Inbox selection ----- */
+.inbox-summary {
+  margin-bottom: 16px;
+}
+.capacity-bar {
+  height: 10px;
+  border-radius: 6px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.capacity-fill {
+  height: 100%;
+  width: 0;
+  background: var(--green);
+  transition: width 0.2s ease;
+}
+.capacity-fill.short {
+  background: var(--amber);
+}
+.inbox-summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.chip {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  color: var(--ink-soft);
+  margin-left: 6px;
+}
+.chip.gmail { background: var(--green-soft); color: var(--green); border-color: var(--green-soft); }
+.chip.outlook { background: var(--accent-soft); color: var(--accent-dark); border-color: var(--accent-soft); }
+.inbox-subhead {
+  margin: 14px 0 8px;
+  font-size: 0.95rem;
+}
+.inbox-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.inbox-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  cursor: pointer;
+}
+.inbox-row:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-soft);
+}
+.inbox-email {
+  flex: 1 1 auto;
+  font-weight: 500;
+  color: var(--ink);
+  word-break: break-all;
+}
+.provider-badge {
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 8px;
+  border-radius: 6px;
+  background: var(--bg-soft);
+  color: var(--muted);
+}
+.provider-badge.gmail { background: var(--green-soft); color: var(--green); }
+.provider-badge.outlook { background: var(--accent-soft); color: var(--accent-dark); }
+.inbox-meta {
+  font-size: 0.8rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.busy-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.busy-group strong {
+  color: var(--amber);
+}
+.busy-emails {
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-top: 2px;
+  word-break: break-all;
+}
+.notice.warning.small {
+  margin-top: 10px;
+  font-size: 0.85rem;
+}
+@media (max-width: 640px) {
+  .inbox-row { flex-wrap: wrap; }
+  .inbox-meta { font-size: 0.75rem; }
+}

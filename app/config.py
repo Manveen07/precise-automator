@@ -14,16 +14,20 @@ SMARTLEAD_WORKSPACES = [
         "name": "PreciseLead",
         "api_key_env": "SMARTLEAD_PRECISELEAD_API_KEY",
         "self_client_name": "PreciseLeads",
+        # Value of the "Client" column in the inbox sheet for this workspace.
+        "sheet_client": "PRECISE_LEADS",
     },
     {
         "key": "belardi_wong",
         "name": "Belardi Wong",
         "api_key_env": "SMARTLEAD_BELARDI_WONG_API_KEY",
+        "sheet_client": "Belardi Wong",
     },
     {
         "key": "darlean",
         "name": "Darlean",
         "api_key_env": "SMARTLEAD_DARLEAN_API_KEY",
+        "sheet_client": "DARLEAN",
     },
 ]
 
@@ -70,6 +74,9 @@ class Settings(BaseSettings):
     SLACK_CHANNEL_ID: str = ""
     SMARTLEAD_WEBHOOK_SECRET: str = ""
     BOUNCE_PROTECTION_THRESHOLD: float = 0.03
+    # Google Apps Script Web App that serves the inbox sheet as a JSON 2D array.
+    INBOX_SHEET_WEBAPP_URL: str = ""
+    INBOX_SHEET_TAB: str = "All Inboxes"
     BLOCKED_PHRASES: list[str] = Field(default_factory=lambda: ["guaranteed", "risk-free"])
 
     @field_validator("SLACK_WEBHOOK_URL", mode="before")
@@ -117,6 +124,14 @@ def get_workspace_config(workspace_key: str) -> dict | None:
             "api_key": api_key,
             "self_client_name": workspace.get("self_client_name") or workspace["name"],
         }
+    return None
+
+
+def get_sheet_client_for_workspace(workspace_key: str) -> str | None:
+    """The inbox sheet's "Client" value for a workspace (for cross-client-safe selection)."""
+    for workspace in SMARTLEAD_WORKSPACES:
+        if workspace["key"] == workspace_key:
+            return workspace.get("sheet_client")
     return None
 
 
