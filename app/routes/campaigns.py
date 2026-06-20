@@ -312,6 +312,38 @@ def update_sequence_delay(
     return _redirect_to_detail(request, campaign_id, {"ok": True, "errors": errors})
 
 
+@router.post("/api/campaigns/{campaign_id}/sequence-edit")
+def edit_sequence_variant(
+    campaign_id: str,
+    request: Request,
+    step_number: int = Form(...),
+    variant_index: int = Form(...),
+    body: str = Form(...),
+    subject: str = Form(""),
+):
+    doc = _require_campaign(campaign_id)
+    plan = doc.get("current_plan") or {}
+    if not plan.get("sequence"):
+        raise HTTPException(status_code=400, detail="No local campaign plan to edit.")
+
+    step = next((s for s in plan["sequence"] if int(s.get("step_number", 0)) == step_number), None)
+    if step is None:
+        raise HTTPException(status_code=404, detail=f"Email {step_number} was not found in this plan.")
+    variants = step.get("variants") or []
+    if variant_index < 0 or variant_index >= len(variants):
+        raise HTTPException(status_code=404, detail="Variant not found for this email.")
+
+    variant = variants[variant_index]
+    variant["body"] = body.replace("\r\n", "\n").strip("\n")
+    # Only the first email carries a subject; follow-ups reply in-thread.
+    if step_number == 1:
+        variant["subject"] = subject.strip()
+
+    errors = validate_campaign_plan(plan, _active_workspace_keys())
+    store.update_plan(campaign_id, plan, errors)
+    return _redirect_to_detail(request, campaign_id, {"ok": True, "errors": errors})
+
+
 # ----- Inbox selection ----- #
 
 

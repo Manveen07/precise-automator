@@ -128,14 +128,32 @@
               {% endif %}
             </header>
             {% for variant in step.variants %}
-            <div class="variant-panel step-body{% if not loop.first %} hidden{% endif %}" data-step="{{ step.step_number }}" data-variant="{{ loop.index0 }}">
-              {% if variant.subject %}
-              <div class="step-subject"><span class="eyebrow">Subject · {{ variant.variant_label }}</span><div class="step-subject-text">{{ variant.subject }}</div></div>
+            <form method="post" action="/api/campaigns/{{ campaign.id }}/sequence-edit"
+                  class="variant-panel step-body variant-edit js-single-submit{% if not loop.first %} hidden{% endif %}"
+                  data-step="{{ step.step_number }}" data-variant="{{ loop.index0 }}">
+              <input type="hidden" name="step_number" value="{{ step.step_number }}">
+              <input type="hidden" name="variant_index" value="{{ loop.index0 }}">
+              {% if step.step_number == 1 %}
+              <div class="step-subject">
+                <span class="eyebrow">Subject · {{ variant.variant_label }}</span>
+                <div class="step-subject-text js-subject-view">{{ variant.subject }}</div>
+                <input class="subject-input js-subject-edit" name="subject" value="{{ variant.subject }}" hidden>
+              </div>
               {% else %}
-              <div class="step-subject"><span class="eyebrow">Thread</span><div class="step-subject-text muted">Follow-up — same thread, no new subject</div></div>
+              <div class="step-subject">
+                <span class="eyebrow">Thread</span>
+                <div class="step-subject-text muted">Follow-up — same thread, no new subject</div>
+                <input type="hidden" name="subject" value="">
+              </div>
               {% endif %}
-              <pre class="email-body">{{ variant.body }}</pre>
-            </div>
+              <pre class="email-body js-body-view">{{ variant.body }}</pre>
+              <textarea class="email-body body-input js-body-edit" name="body" rows="8" hidden>{{ variant.body }}</textarea>
+              <div class="variant-edit-actions">
+                <button type="button" class="button secondary small js-edit">Edit</button>
+                <button type="submit" class="button small js-save" hidden>Save</button>
+                <button type="button" class="button secondary small js-cancel" hidden>Cancel</button>
+              </div>
+            </form>
             {% endfor %}
           </article>
         </div>
@@ -255,6 +273,32 @@
       document.querySelectorAll(`.variant-panel[data-step="${step}"]`).forEach((p) =>
         p.classList.toggle("hidden", p.dataset.variant !== idx));
     });
+  });
+
+  // Inline edit of a variant's subject + body.
+  document.querySelectorAll(".variant-edit").forEach((form) => {
+    const editBtn = form.querySelector(".js-edit");
+    const saveBtn = form.querySelector(".js-save");
+    const cancelBtn = form.querySelector(".js-cancel");
+    const bodyView = form.querySelector(".js-body-view");
+    const bodyEdit = form.querySelector(".js-body-edit");
+    const subjView = form.querySelector(".js-subject-view");
+    const subjEdit = form.querySelector(".js-subject-edit");
+    const grow = (t) => { t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; };
+    editBtn.addEventListener("click", () => {
+      bodyView.hidden = true; bodyEdit.hidden = false; grow(bodyEdit);
+      if (subjView && subjEdit) { subjView.hidden = true; subjEdit.hidden = false; }
+      editBtn.hidden = true; saveBtn.hidden = false; cancelBtn.hidden = false;
+      bodyEdit.focus();
+    });
+    cancelBtn.addEventListener("click", () => {
+      bodyEdit.value = bodyView.textContent;
+      if (subjView && subjEdit) subjEdit.value = subjView.textContent;
+      bodyEdit.hidden = true; bodyView.hidden = false;
+      if (subjView && subjEdit) { subjEdit.hidden = true; subjView.hidden = false; }
+      saveBtn.hidden = true; cancelBtn.hidden = true; editBtn.hidden = false;
+    });
+    bodyEdit.addEventListener("input", () => grow(bodyEdit));
   });
 </script>
 <script>

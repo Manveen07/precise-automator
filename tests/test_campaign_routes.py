@@ -1001,3 +1001,26 @@ def test_campaign_detail_renders_two_column_layout(client):
     assert "Sequence plan" in response.text
     assert "danger-zone" in response.text
     assert "Overview" in response.text
+
+
+def test_edit_sequence_variant_updates_subject_and_body(client):
+    doc = _inbox_campaign()
+    cid = str(doc["_id"])
+    response = client.post(
+        f"/api/campaigns/{cid}/sequence-edit",
+        data={"step_number": "1", "variant_index": "0", "subject": "New subject", "body": "Edited body line."},
+    )
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    variant = store.get_campaign(cid)["current_plan"]["sequence"][0]["variants"][0]
+    assert variant["subject"] == "New subject"
+    assert variant["body"] == "Edited body line."
+
+
+def test_edit_sequence_variant_rejects_unknown_step(client):
+    doc = _inbox_campaign()
+    response = client.post(
+        f"/api/campaigns/{doc['_id']}/sequence-edit",
+        data={"step_number": "9", "variant_index": "0", "body": "x"},
+    )
+    assert response.status_code == 404

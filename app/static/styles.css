@@ -1524,6 +1524,29 @@ summary:hover { color: var(--accent); }
   margin: 0;
 }
 .raw-json { margin-top: 18px; }
+.variant-edit { margin: 0; }
+.subject-input {
+  width: 100%;
+  margin-top: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--panel);
+}
+.subject-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+textarea.body-input {
+  width: 100%;
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  resize: vertical;
+  overflow: hidden;
+}
+textarea.body-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.variant-edit-actions { display: flex; gap: 8px; margin-top: 12px; }
 
 /* Detail sidebar */
 .sidebar-card { padding: 22px; }
