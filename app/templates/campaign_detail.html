@@ -152,24 +152,26 @@
         </form>
         {% endif %}
       </header>
-      <table>
-        <thead>
-          <tr>
-            <th>Variant</th>
-            <th>Subject</th>
-            <th>Body</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for variant in step.variants %}
-          <tr>
-            <td>{{ variant.variant_label }}</td>
-            <td>{% if variant.subject %}{{ variant.subject }}{% else %}<span class="muted">empty - same thread</span>{% endif %}</td>
-            <td><pre class="copy-preview">{{ variant.body }}</pre></td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+      {% if step.variants | length > 1 %}
+      <div class="variant-tabs" role="tablist">
+        {% for variant in step.variants %}
+        <button type="button" class="variant-tab{% if loop.first %} active{% endif %}" data-step="{{ step.step_number }}" data-variant="{{ loop.index0 }}">
+          <span class="variant-tab-label">{{ variant.variant_label }}</span>
+          {% if variant.subject %}<span class="variant-tab-subject">{{ variant.subject }}</span>{% endif %}
+        </button>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% for variant in step.variants %}
+      <div class="variant-panel{% if not loop.first %} hidden{% endif %}" data-step="{{ step.step_number }}" data-variant="{{ loop.index0 }}">
+        {% if variant.subject %}
+        <div class="variant-subject"><span class="eyebrow">Subject {{ variant.variant_label }}</span><strong>{{ variant.subject }}</strong></div>
+        {% else %}
+        <div class="variant-subject muted">Follow-up — same thread, no new subject</div>
+        {% endif %}
+        <pre class="copy-preview">{{ variant.body }}</pre>
+      </div>
+      {% endfor %}
     </article>
     {% endfor %}
   </div>
@@ -277,6 +279,19 @@
 {% block scripts %}
 {% if campaign.has_local_plan %}
 <script>
+  // Plan Preview variant tabs: one body shown at a time per email step.
+  document.querySelectorAll(".variant-tab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      const step = tab.dataset.step;
+      const idx = tab.dataset.variant;
+      document.querySelectorAll(`.variant-tab[data-step="${step}"]`).forEach((t) =>
+        t.classList.toggle("active", t === tab));
+      document.querySelectorAll(`.variant-panel[data-step="${step}"]`).forEach((p) =>
+        p.classList.toggle("hidden", p.dataset.variant !== idx));
+    });
+  });
+</script>
+<script>
   (() => {
     const panel = document.getElementById("inbox-panel");
     if (!panel) return;
@@ -290,24 +305,32 @@
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     const cap = (n) => Math.round(Number(n) || 0);
 
-    const inboxRow = (r, checked) => `
-      <label class="inbox-row">
-        <input type="checkbox" name="account_ids" value="${esc(r.account_id)}" ${checked ? "checked" : ""}>
-        <span class="inbox-email">${esc(r.email)}</span>
-        <span class="provider-badge ${esc((r.provider || "").toLowerCase())}">${esc(r.provider)}</span>
-        <span class="inbox-meta">cap ${cap(r.avail_capacity)}</span>
-        <span class="inbox-meta">${esc(r.warmup_state)}</span>
-        <span class="inbox-meta">test ${esc(r.test_date)}</span>
-      </label>`;
+    const inboxRow = (r, checked) => {
+      const prov = esc((r.provider || "").toLowerCase());
+      return `
+      <tr>
+        <td class="inbox-check"><input type="checkbox" name="account_ids" value="${esc(r.account_id)}" data-cap="${cap(r.avail_capacity)}" data-provider="${prov}" ${checked ? "checked" : ""}></td>
+        <td class="inbox-email">${esc(r.email)}</td>
+        <td><span class="provider-badge ${prov}">${esc(r.provider)}</span></td>
+        <td class="num">${cap(r.avail_capacity)}</td>
+        <td><span class="warmup-${esc((r.warmup_state || "").toLowerCase())}">${esc(r.warmup_state)}</span></td>
+        <td class="muted">${esc(r.test_date)}</td>
+      </tr>`;
+    };
+
+    const inboxTable = (rows) => rows
+      ? `<table class="inbox-table">
+           <thead><tr><th></th><th>Inbox</th><th>Provider</th><th>Cap</th><th>Warmup</th><th>Test</th></tr></thead>
+           <tbody>${rows}</tbody>
+         </table>`
+      : "";
 
     const updateSummary = (needed) => {
       const checked = [...form.querySelectorAll('input[name="account_ids"]:checked')];
-      const rows = checked.map((c) => c.closest(".inbox-row"));
       let total = 0, gmail = 0, outlook = 0;
       checked.forEach((c) => {
-        const m = c.parentElement.querySelector(".inbox-meta");
-        total += parseInt((m ? m.textContent : "").replace(/\D/g, ""), 10) || 0;
-        const p = (c.parentElement.querySelector(".provider-badge").textContent || "").toLowerCase();
+        total += parseInt(c.dataset.cap, 10) || 0;
+        const p = c.dataset.provider;
         if (p === "gmail") gmail += 1; else if (p === "outlook") outlook += 1;
       });
       const pct = needed > 0 ? Math.min(100, Math.round((total / needed) * 100)) : 100;
@@ -354,8 +377,8 @@
           ${data.shortfall ? '<p class="notice warning small">Total FREE capacity is below the daily volume for this campaign.</p>' : ""}
         </div>
         <h3 class="inbox-subhead">Recommended (${(data.recommended || []).length})</h3>
-        <div class="inbox-list">${(data.recommended || []).map((r) => inboxRow(r, preselected.has(String(r.account_id)))).join("") || '<p class="muted">No eligible FREE inboxes for this client.</p>'}</div>
-        ${extraFree.length ? `<details class="clean-details"><summary>More FREE inboxes (${extraFree.length})</summary><div class="inbox-list">${extraFree.map((r) => inboxRow(r, preselected.has(String(r.account_id)))).join("")}</div></details>` : ""}
+        ${inboxTable((data.recommended || []).map((r) => inboxRow(r, preselected.has(String(r.account_id)))).join("")) || '<p class="muted">No eligible FREE inboxes for this client.</p>'}
+        ${extraFree.length ? `<details class="clean-details"><summary>More FREE inboxes (${extraFree.length})</summary>${inboxTable(extraFree.map((r) => inboxRow(r, preselected.has(String(r.account_id)))).join(""))}</details>` : ""}
         ${busyHtml ? `<details class="clean-details"><summary>Busy / excluded (${Object.values(busy).reduce((a, b) => a + b.length, 0)})</summary><div class="busy-list">${busyHtml}</div></details>` : ""}
       `;
       actions.hidden = false;

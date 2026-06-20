@@ -932,3 +932,33 @@ def test_campaign_detail_renders_inbox_panel(client):
     assert 'id="inbox-panel"' in response.text
     assert f'/api/campaigns/{doc["_id"]}/inboxes' in response.text
     assert 'id="inbox-form"' in response.text
+
+
+def test_campaign_detail_uses_variant_tabs_for_multi_variant_step(client):
+    doc = store.insert_campaign(
+        workspace_key="preciselead",
+        campaign_name="Tabs Test",
+        raw_input={"workspace_key": "preciselead", "campaign_name": "Tabs Test", "parsed_messaging": {}},
+        plan={
+            "workspace_key": "preciselead",
+            "campaign_name": "Tabs Test",
+            "template_family": "cold_email_standard_v1",
+            "schedule": {"max_new_leads_per_day": 25},
+            "settings": {},
+            "inbox_selection": {"mode": "skip", "email_account_ids": []},
+            "sequence": [
+                {"step_number": 1, "delay_days": 0, "variants": [
+                    {"variant_label": "A", "subject": "Subject One", "body": "Shared body"},
+                    {"variant_label": "B", "subject": "Subject Two", "body": "Shared body"},
+                ]},
+            ],
+            "approval_required": True,
+            "notes_for_operator": [],
+        },
+        validation_errors=[],
+    )
+    response = client.get(f"/campaigns/{doc['_id']}")
+    assert response.status_code == 200
+    assert 'class="variant-tabs"' in response.text
+    assert 'class="variant-panel' in response.text
+    assert "Subject One" in response.text and "Subject Two" in response.text
