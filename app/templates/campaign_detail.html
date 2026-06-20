@@ -328,8 +328,8 @@
       const reasons = Object.keys(busy);
       if (reasons.length) {
         busyHtml = reasons.map((reason) => `
-          <div class="busy-group"><strong>${esc(reason)}</strong> (${busy[reason].length})
-            <div class="busy-emails">${busy[reason].map((r) => esc(r.email)).join(", ")}</div>
+          <div class="busy-group"><strong>${esc(reason)}</strong> <span class="busy-count">${busy[reason].length}</span>
+            <div class="busy-emails">${busy[reason].map((r) => `<span class="busy-chip">${esc(r.email)}</span>`).join("")}</div>
           </div>`).join("");
       }
 

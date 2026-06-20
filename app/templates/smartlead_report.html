@@ -94,7 +94,15 @@
     {% for key, value in section.data.items() %}
     <div class="kv-row">
       <span class="kv-key">{{ key.replace('_', ' ') }}</span>
-      <span class="kv-value">{% if value is mapping or value is sequence and value is not string %}<code>{{ value | tojson }}</code>{% else %}{{ value }}{% endif %}</span>
+      <span class="kv-value">
+        {%- if value is none -%}<span class="muted">—</span>
+        {%- elif value is mapping -%}
+          <span class="kv-subgrid">{% for k, v in value.items() %}<span class="kv-sub"><span class="kv-sub-k">{{ k.replace('_', ' ') }}</span> {{ v }}</span>{% endfor %}</span>
+        {%- elif value is sequence and value is not string -%}
+          <details class="clean-details inline-details"><summary>{{ value | length }} item{% if value | length != 1 %}s{% endif %}</summary><pre>{{ value | tojson(indent=2) }}</pre></details>
+        {%- else -%}{{ value }}
+        {%- endif -%}
+      </span>
     </div>
     {% endfor %}
   </div>
