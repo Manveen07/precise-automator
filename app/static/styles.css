@@ -1622,8 +1622,23 @@ summary:hover { color: var(--accent); }
 .inbox-row input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--accent); cursor: pointer; margin: 0; }
 .inbox-email { font-size: 13.5px; font-weight: 500; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .inbox-grid .num { text-align: right; font-size: 13px; font-variant-numeric: tabular-nums; }
-.inbox-apply { display: flex; align-items: center; gap: 14px; margin-top: 18px; flex-wrap: wrap; }
+.inbox-apply {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
 #inbox-note.short { color: var(--amber); }
+#inbox-content > .clean-details { margin-top: 14px; }
+#inbox-content > .clean-details > summary {
+  font-weight: 600;
+  color: var(--ink-soft);
+  padding: 6px 0;
+}
+#inbox-content > .clean-details[open] > summary { margin-bottom: 4px; }
 
 /* Smartlead report (inspect / analytics) */
 .report-notice { margin-bottom: 18px; }
