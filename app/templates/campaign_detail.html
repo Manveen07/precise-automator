@@ -179,6 +179,25 @@
   </details>
 </section>
 
+<section class="panel" id="inbox-panel"
+         data-inbox-url="/api/campaigns/{{ campaign.id }}/inboxes"
+         data-apply-action="/api/campaigns/{{ campaign.id }}/inbox-selection">
+  <div class="section-heading">
+    <h2>Inboxes</h2>
+    <div class="header-actions">
+      <button type="button" class="button secondary" id="inbox-refresh">Refresh</button>
+    </div>
+  </div>
+  <p class="section-lead">Recommended sending inboxes for {{ campaign.smartlead_client.label }}, based on availability and capacity. Selected inboxes attach to the campaign on sync.</p>
+  <form method="post" id="inbox-form" class="js-single-submit">
+    <div id="inbox-content"><p class="muted">Loading inboxes…</p></div>
+    <div class="action-row" id="inbox-actions" hidden>
+      <button type="submit">Apply Selection</button>
+      <span class="muted" id="inbox-note"></span>
+    </div>
+  </form>
+</section>
+
 <section class="panel">
   <details class="clean-details">
     <summary>Optional AI Revision</summary>
@@ -256,6 +275,110 @@
 {% endif %}
 {% endblock %}
 {% block scripts %}
+{% if campaign.has_local_plan %}
+<script>
+  (() => {
+    const panel = document.getElementById("inbox-panel");
+    if (!panel) return;
+    const content = document.getElementById("inbox-content");
+    const form = document.getElementById("inbox-form");
+    const actions = document.getElementById("inbox-actions");
+    const note = document.getElementById("inbox-note");
+    form.action = panel.dataset.applyAction;
+
+    const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    const cap = (n) => Math.round(Number(n) || 0);
+
+    const inboxRow = (r, checked) => `
+      <label class="inbox-row">
+        <input type="checkbox" name="account_ids" value="${esc(r.account_id)}" ${checked ? "checked" : ""}>
+        <span class="inbox-email">${esc(r.email)}</span>
+        <span class="provider-badge ${esc((r.provider || "").toLowerCase())}">${esc(r.provider)}</span>
+        <span class="inbox-meta">cap ${cap(r.avail_capacity)}</span>
+        <span class="inbox-meta">${esc(r.warmup_state)}</span>
+        <span class="inbox-meta">test ${esc(r.test_date)}</span>
+      </label>`;
+
+    const updateSummary = (needed) => {
+      const checked = [...form.querySelectorAll('input[name="account_ids"]:checked')];
+      const rows = checked.map((c) => c.closest(".inbox-row"));
+      let total = 0, gmail = 0, outlook = 0;
+      checked.forEach((c) => {
+        const m = c.parentElement.querySelector(".inbox-meta");
+        total += parseInt((m ? m.textContent : "").replace(/\D/g, ""), 10) || 0;
+        const p = (c.parentElement.querySelector(".provider-badge").textContent || "").toLowerCase();
+        if (p === "gmail") gmail += 1; else if (p === "outlook") outlook += 1;
+      });
+      const pct = needed > 0 ? Math.min(100, Math.round((total / needed) * 100)) : 100;
+      const ok = total >= needed;
+      const bar = document.getElementById("inbox-capacity-fill");
+      if (bar) { bar.style.width = pct + "%"; bar.classList.toggle("short", !ok); }
+      const label = document.getElementById("inbox-capacity-label");
+      if (label) label.textContent = `${total} / ${needed} daily capacity selected (${checked.length} inboxes)`;
+      const chips = document.getElementById("inbox-provider-chips");
+      if (chips) chips.innerHTML = `<span class="chip gmail">Gmail ${gmail}</span><span class="chip outlook">Outlook ${outlook}</span>`;
+      note.textContent = ok ? "Capacity covers daily volume." : "Below daily volume — add more inboxes or free some up.";
+    };
+
+    const render = (data) => {
+      if (!data.ok) {
+        content.innerHTML = `<div class="notice warning"><p>${esc(data.error)}</p><p class="muted">You can still sync; no inboxes will be attached.</p></div>`;
+        actions.hidden = true;
+        return;
+      }
+      const needed = data.needed_daily_volume;
+      const preselected = (data.selected_account_ids && data.selected_account_ids.length)
+        ? new Set(data.selected_account_ids.map(String))
+        : new Set((data.recommended || []).map((r) => String(r.account_id)));
+      const recIds = new Set((data.recommended || []).map((r) => String(r.account_id)));
+      const extraFree = (data.free_pool || []).filter((r) => !recIds.has(String(r.account_id)));
+
+      let busyHtml = "";
+      const busy = data.busy || {};
+      const reasons = Object.keys(busy);
+      if (reasons.length) {
+        busyHtml = reasons.map((reason) => `
+          <div class="busy-group"><strong>${esc(reason)}</strong> (${busy[reason].length})
+            <div class="busy-emails">${busy[reason].map((r) => esc(r.email)).join(", ")}</div>
+          </div>`).join("");
+      }
+
+      content.innerHTML = `
+        <div class="inbox-summary">
+          <div class="capacity-bar"><div id="inbox-capacity-fill" class="capacity-fill"></div></div>
+          <div class="inbox-summary-row">
+            <span id="inbox-capacity-label" class="muted"></span>
+            <span id="inbox-provider-chips"></span>
+          </div>
+          ${data.shortfall ? '<p class="notice warning small">Total FREE capacity is below the daily volume for this campaign.</p>' : ""}
+        </div>
+        <h3 class="inbox-subhead">Recommended (${(data.recommended || []).length})</h3>
+        <div class="inbox-list">${(data.recommended || []).map((r) => inboxRow(r, preselected.has(String(r.account_id)))).join("") || '<p class="muted">No eligible FREE inboxes for this client.</p>'}</div>
+        ${extraFree.length ? `<details class="clean-details"><summary>More FREE inboxes (${extraFree.length})</summary><div class="inbox-list">${extraFree.map((r) => inboxRow(r, preselected.has(String(r.account_id)))).join("")}</div></details>` : ""}
+        ${busyHtml ? `<details class="clean-details"><summary>Busy / excluded (${Object.values(busy).reduce((a, b) => a + b.length, 0)})</summary><div class="busy-list">${busyHtml}</div></details>` : ""}
+      `;
+      actions.hidden = false;
+      form.addEventListener("change", () => updateSummary(needed));
+      updateSummary(needed);
+    };
+
+    const load = async () => {
+      content.innerHTML = '<p class="muted">Loading inboxes…</p>';
+      actions.hidden = true;
+      try {
+        const res = await fetch(panel.dataset.inboxUrl, { headers: { Accept: "application/json" } });
+        render(await res.json());
+      } catch (e) {
+        content.innerHTML = '<div class="notice warning"><p>Could not load inboxes.</p></div>';
+      }
+    };
+
+    document.getElementById("inbox-refresh").addEventListener("click", load);
+    load();
+  })();
+</script>
+{% endif %}
 {% if campaign.status == "syncing" %}
 <script>
   (() => {
