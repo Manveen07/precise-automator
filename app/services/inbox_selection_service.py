@@ -2,9 +2,9 @@
 
 A "row" is a dict keyed by the sheet's header names (see inbox_sheet_service). Selection
 follows the team's documented algorithm: filter to the client's eligible FREE inboxes,
-dedup by account, size the pick by ceil(volume / avg capacity), and rank the picks.
+dedup by account, rank them (unassigned + highest capacity first), then greedily pick the
+fewest inboxes whose combined capacity covers the needed daily volume.
 """
-import math
 
 
 def _to_float(value, default: float = 0.0) -> float:
@@ -92,13 +92,17 @@ def select_inboxes(rows: list[dict], client: str, needed_daily_volume: int) -> d
     eligible.sort(key=_rank_key)
 
     total_capacity = sum(_to_float(row.get("Avail. Capacity")) for row in eligible)
-    if eligible:
-        avg_capacity = total_capacity / len(eligible)
-        inboxes_needed = min(len(eligible), max(1, math.ceil(needed_daily_volume / avg_capacity)))
-    else:
-        inboxes_needed = 0
-
-    picked = eligible[:inboxes_needed]
+    # Greedy fill: walk the ranked list (unassigned + highest capacity first) and stop as
+    # soon as the running capacity covers the needed daily volume. This avoids over-
+    # provisioning — picking the fewest inboxes that meet the target rather than sizing by
+    # average capacity (which overshoots when high- and low-capacity inboxes are mixed).
+    picked: list[dict] = []
+    running = 0.0
+    for row in eligible:
+        if running >= needed_daily_volume:
+            break
+        picked.append(row)
+        running += _to_float(row.get("Avail. Capacity"))
 
     busy: dict[str, list[dict]] = {}
     eligible_accounts = {_account_id(row.get("Account ID")) for row in eligible}

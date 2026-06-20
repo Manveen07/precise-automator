@@ -54,12 +54,21 @@ def test_dedup_by_account_id_keeps_lowest_capacity():
     assert result["free_pool"][0]["avail_capacity"] == 10
 
 
-def test_inboxes_needed_is_ceil_volume_over_avg_capacity():
-    # avg capacity 10, need 25 -> ceil(2.5) = 3 inboxes
+def test_picks_just_enough_inboxes_to_cover_volume():
+    # uniform capacity 10, need 25 -> 10+10+10 covers it at 3 inboxes
     rows = [_row(Email=f"{i}@x.com", **{"Account ID": str(i), "Avail. Capacity": 10}) for i in range(1, 6)]
     result = select_inboxes(rows, client="PRECISE_LEADS", needed_daily_volume=25)
     assert len(result["recommended"]) == 3
     assert result["email_account_ids"] == [1, 2, 3]
+
+
+def test_greedy_fill_stops_at_needed_without_overshooting():
+    # 3 high-cap (30) + 5 low-cap (10). Need 60. Greedy picks the two 30s and stops.
+    rows = [_row(Email=f"h{i}@x.com", **{"Account ID": str(i), "Avail. Capacity": 30}) for i in range(1, 4)]
+    rows += [_row(Email=f"l{i}@x.com", **{"Account ID": str(10 + i), "Avail. Capacity": 10}) for i in range(1, 6)]
+    result = select_inboxes(rows, client="PRECISE_LEADS", needed_daily_volume=60)
+    assert len(result["recommended"]) == 2
+    assert result["estimated_daily_capacity"] == 60
 
 
 def test_provider_counts_and_estimated_capacity():
