@@ -1,280 +1,246 @@
 {% extends "base.html" %}
 {% block title %}{{ campaign.campaign_name }} - Precise Automator{% endblock %}
 {% block content %}
-<div class="page-heading">
-  <div>
+<a class="back-link" href="/app"><span aria-hidden="true">&#8592;</span> Back to campaigns</a>
+
+<div class="detail-header">
+  <div class="detail-header-main">
     <h1>{{ campaign.campaign_name }}</h1>
-    <p class="muted">Workspace {{ campaign.workspace_name }}{% if campaign.raw_input.parsed_messaging.selected_campaign %} - {{ campaign.raw_input.parsed_messaging.selected_campaign }}{% endif %}</p>
-  </div>
-  <a class="button secondary" href="/app">Back to Dashboard</a>
-</div>
-
-<section class="panel">
-  <div class="summary-grid">
-    <div>
-      <span class="eyebrow">Status</span>
-      <strong class="summary-value"><span class="badge status-{{ campaign.status }}">{{ campaign.status_label }}</span></strong>
-    </div>
-    <div>
-      <span class="eyebrow">Plan</span>
-      <strong class="summary-value">
-        {% if campaign.validation_errors %}
-        <span class="badge status-failed">{{ campaign.validation_errors | length }} validation error(s)</span>
-        {% elif campaign.has_local_plan %}
-        <span class="badge status-ready">valid</span>
-        {% else %}<span class="muted">{% if campaign.smartlead_campaign_id %}not loaded{% else %}none{% endif %}</span>{% endif %}
-      </strong>
-    </div>
-    <div>
-      <span class="eyebrow">Client</span>
-      <strong class="summary-value">{{ campaign.smartlead_client.label }}</strong>
-    </div>
-    <div>
-      <span class="eyebrow">Smartlead</span>
-      <strong class="summary-value">
-        {% if campaign.smartlead_campaign_id %}ID {{ campaign.smartlead_campaign_id }}{% else %}<span class="muted">not synced</span>{% endif %}
-      </strong>
-    </div>
-    <div>
-      <span class="eyebrow">Updated</span>
-      <strong class="summary-value">{% if campaign.updated_at %}{{ campaign.updated_at.strftime("%Y-%m-%d %H:%M IST") }}{% else %}—{% endif %}</strong>
+    <div class="detail-subline">
+      <span class="badge status-{{ campaign.status }}">{{ campaign.status_label }}</span>
+      <span class="muted">Workspace {{ campaign.workspace_name }}{% if campaign.raw_input.parsed_messaging.selected_campaign %} · {{ campaign.raw_input.parsed_messaging.selected_campaign }}{% endif %}</span>
     </div>
   </div>
-</section>
-
-{% if campaign.last_sync_error %}
-<section class="panel">
-  <div class="notice error">
-    <strong>Last sync failed:</strong>
-    <p>{{ campaign.last_sync_error }}</p>
-  </div>
-</section>
-{% endif %}
-
-<section class="panel">
-  <div class="section-heading"><h2>Next Action</h2></div>
-  {% if not campaign.has_local_plan and campaign.smartlead_campaign_id %}
-  <p class="section-lead">This Smartlead campaign is linked. Inspect or review analytics from Smartlead.</p>
-  <div class="action-row">
+  <div class="detail-actions">
+    {% if not campaign.has_local_plan and campaign.smartlead_campaign_id %}
     <a class="button secondary" href="/api/campaigns/{{ campaign.id }}/smartlead">Inspect</a>
     <a class="button secondary" href="/api/campaigns/{{ campaign.id }}/analytics">Analytics</a>
-  </div>
-  {% else %}
-  <p class="section-lead">Sync the current plan to Smartlead. If the campaign has already been synced, this updates the existing Smartlead campaign.</p>
-  <div class="action-row">
+    {% else %}
+    {% if campaign.smartlead_campaign_id %}
+    <a class="button secondary" href="/api/campaigns/{{ campaign.id }}/smartlead">Inspect</a>
+    {% endif %}
     {% if campaign.status == "syncing" %}
-    <button type="button" disabled>Sync in Progress</button>
+    <button type="button" class="button" disabled>Sync in progress…</button>
     {% elif campaign.validation_errors %}
-    <button type="button" disabled>Fix validation errors first</button>
     <form method="post" action="/api/campaigns/{{ campaign.id }}/regenerate" class="js-single-submit">
-      <button type="submit" class="secondary">Regenerate Plan</button>
+      <button type="submit" class="button secondary">Regenerate Plan</button>
     </form>
     {% else %}
     <form method="post" action="/api/campaigns/{{ campaign.id }}/sync" class="js-single-submit">
-      <button type="submit">{% if campaign.smartlead_campaign_id %}Re-sync to Smartlead{% else %}Sync to Smartlead{% endif %}</button>
+      <button type="submit" class="button">{% if campaign.smartlead_campaign_id %}Re-sync to Smartlead{% else %}Sync to Smartlead{% endif %}</button>
     </form>
     {% endif %}
-  </div>
-  {% endif %}
-</section>
-
-{% if campaign.has_local_plan %}
-<section class="panel">
-  <div class="section-heading">
-    <h2>Plan Preview</h2>
-    <div class="header-actions">
-      {% if campaign.spintax_status %}
-      <button type="button" class="button secondary" onclick="document.getElementById('spintax-dialog').showModal()">
-        {% if campaign.spintax_status.all_have_spintax %}Re-check Spintax{% else %}Enable Spintax ({{ campaign.spintax_status.need }} of {{ campaign.spintax_status.total }}){% endif %}
-      </button>
-      {% endif %}
-    </div>
-  </div>
-  <p class="section-lead">This is what will be pushed to Smartlead. Variants and delays mirror the final campaign exactly.</p>
-
-  {% if campaign.spintax_status %}
-  <dialog id="spintax-dialog" class="modal">
-    <form method="dialog" class="modal-close-form">
-      <button type="submit" aria-label="Close" class="modal-close">&times;</button>
-    </form>
-    <h3>Enable Spintax</h3>
-    {% if campaign.spintax_status.all_have_spintax %}
-    <p>All {{ campaign.spintax_status.total }} email bodies already contain spintax. Nothing to generate.</p>
-    <div class="modal-actions">
-      <button type="button" class="button secondary" onclick="document.getElementById('spintax-dialog').close()">Close</button>
-    </div>
-    {% else %}
-    <p>
-      <strong>{{ campaign.spintax_status.need }}</strong> of {{ campaign.spintax_status.total }} email bodies do not contain spintax.
-      Click below to generate spintax for those bodies using Claude. Bodies that already have spintax will be left untouched.
-    </p>
-    <p class="muted">May take ~5-10 seconds per unique body.</p>
-    <div class="modal-actions">
-      <form method="post" action="/api/campaigns/{{ campaign.id }}/spintax" class="js-single-submit">
-        <button type="submit">Generate Spintax with Claude</button>
-      </form>
-      <button type="button" class="button secondary" onclick="document.getElementById('spintax-dialog').close()">Cancel</button>
-    </div>
     {% endif %}
-  </dialog>
-  {% endif %}
-
-  {% if campaign.validation_errors %}
-  <div class="notice error">
-    {% for error in campaign.validation_errors %}
-    <p>{{ error }}</p>
-    {% endfor %}
   </div>
-  {% endif %}
+</div>
 
-  <div class="summary-grid compact">
-    <div><span class="eyebrow">Daily Cap</span><strong class="summary-value">{{ campaign.plan.schedule.max_new_leads_per_day }}</strong></div>
-    <div><span class="eyebrow">Send Hours</span><strong class="summary-value">{{ campaign.plan.schedule.start_hour }}-{{ campaign.plan.schedule.end_hour }}</strong></div>
-    <div><span class="eyebrow">Timezone</span><strong class="summary-value">{{ campaign.plan.schedule.timezone }}</strong></div>
-    <div><span class="eyebrow">Tracking</span><strong class="summary-value">opens off - clicks off</strong></div>
+{% if campaign.last_sync_error %}
+<div class="sync-error-banner">
+  <span class="sync-error-glyph" aria-hidden="true">&#9888;</span>
+  <div>
+    <strong>Last sync failed</strong>
+    <p>{{ campaign.last_sync_error }}</p>
   </div>
-  <div class="sequence-list">
-    {% for step in campaign.plan.sequence %}
-    <article class="sequence-step">
-      <header>
-        <h3>Email {{ step.step_number }}</h3>
-        {% if step.step_number == 1 %}
-        <span class="muted">Sends immediately</span>
-        {% else %}
-        <form method="post" action="/api/campaigns/{{ campaign.id }}/delay" class="delay-form">
-          <input type="hidden" name="step_number" value="{{ step.step_number }}">
-          <label>
-            <span>Delay</span>
-            <input name="delay_days" type="number" min="1" max="30" value="{{ step.delay_days }}" aria-label="Delay for Email {{ step.step_number }} in days">
-          </label>
-          <span class="muted">day{% if step.delay_days != 1 %}s{% endif %}</span>
-          <button type="submit" class="small secondary">Save</button>
-        </form>
-        {% endif %}
-      </header>
-      {% if step.variants | length > 1 %}
-      <div class="variant-tabs" role="tablist">
-        {% for variant in step.variants %}
-        <button type="button" class="variant-tab{% if loop.first %} active{% endif %}" data-step="{{ step.step_number }}" data-variant="{{ loop.index0 }}">
-          <span class="variant-tab-label">{{ variant.variant_label }}</span>
-          {% if variant.subject %}<span class="variant-tab-subject">{{ variant.subject }}</span>{% endif %}
+</div>
+{% endif %}
+
+<div class="detail-grid">
+  <div class="detail-main">
+
+    {% if campaign.has_local_plan %}
+    <section class="detail-card">
+      <div class="card-head">
+        <h2 class="card-title">Sequence plan</h2>
+        {% if campaign.spintax_status %}
+        <button type="button" class="button secondary small" onclick="document.getElementById('spintax-dialog').showModal()">
+          {% if campaign.spintax_status.all_have_spintax %}Re-check spintax{% else %}Enable spintax ({{ campaign.spintax_status.need }} of {{ campaign.spintax_status.total }}){% endif %}
         </button>
+        {% endif %}
+      </div>
+      <p class="card-lead">Exactly what will be pushed to Smartlead. Variants and delays mirror the final campaign.</p>
+
+      {% if campaign.spintax_status %}
+      <dialog id="spintax-dialog" class="modal">
+        <form method="dialog" class="modal-close-form">
+          <button type="submit" aria-label="Close" class="modal-close">&times;</button>
+        </form>
+        <h3>Enable Spintax</h3>
+        {% if campaign.spintax_status.all_have_spintax %}
+        <p>All {{ campaign.spintax_status.total }} email bodies already contain spintax. Nothing to generate.</p>
+        <div class="modal-actions">
+          <button type="button" class="button secondary" onclick="document.getElementById('spintax-dialog').close()">Close</button>
+        </div>
+        {% else %}
+        <p><strong>{{ campaign.spintax_status.need }}</strong> of {{ campaign.spintax_status.total }} email bodies do not contain spintax. Bodies that already have spintax will be left untouched.</p>
+        <p class="muted">May take ~5-10 seconds per unique body.</p>
+        <div class="modal-actions">
+          <form method="post" action="/api/campaigns/{{ campaign.id }}/spintax" class="js-single-submit">
+            <button type="submit">Generate Spintax with Claude</button>
+          </form>
+          <button type="button" class="button secondary" onclick="document.getElementById('spintax-dialog').close()">Cancel</button>
+        </div>
+        {% endif %}
+      </dialog>
+      {% endif %}
+
+      {% if campaign.validation_errors %}
+      <div class="notice error">
+        {% for error in campaign.validation_errors %}<p>{{ error }}</p>{% endfor %}
+      </div>
+      {% endif %}
+
+      <div class="schedule-chips">
+        <div class="schedule-chip"><span class="chip-label">Daily cap</span><span class="chip-value">{{ campaign.plan.schedule.max_new_leads_per_day }}</span></div>
+        <div class="schedule-chip"><span class="chip-label">Send hours</span><span class="chip-value">{{ campaign.plan.schedule.start_hour }}–{{ campaign.plan.schedule.end_hour }}</span></div>
+        <div class="schedule-chip"><span class="chip-label">Timezone</span><span class="chip-value">{{ campaign.plan.schedule.timezone }}</span></div>
+        <div class="schedule-chip"><span class="chip-label">Tracking</span><span class="chip-value">Off</span></div>
+      </div>
+
+      <div class="timeline">
+        {% for step in campaign.plan.sequence %}
+        <div class="timeline-item">
+          {% if step.step_number > 1 %}
+          <div class="delay-separator">
+            <span class="delay-line" aria-hidden="true"></span>
+            <span class="delay-arrow" aria-hidden="true">&#8595;</span>
+            <form method="post" action="/api/campaigns/{{ campaign.id }}/delay" class="delay-form">
+              <input type="hidden" name="step_number" value="{{ step.step_number }}">
+              <span>Wait</span>
+              <input name="delay_days" type="number" min="1" max="30" value="{{ step.delay_days }}" aria-label="Delay for Email {{ step.step_number }} in days">
+              <span>day{% if step.delay_days != 1 %}s{% endif %} before sending</span>
+              <button type="submit" class="button secondary small">Save</button>
+            </form>
+          </div>
+          {% endif %}
+          <article class="step-card">
+            <header class="step-head">
+              <div class="step-head-left">
+                <span class="step-num">{{ step.step_number }}</span>
+                <strong>Email {{ step.step_number }}</strong>
+                {% if step.step_number == 1 %}<span class="muted step-timing">Sends immediately</span>{% endif %}
+              </div>
+              {% if step.variants | length > 1 %}
+              <div class="variant-tabs" role="tablist">
+                {% for variant in step.variants %}
+                <button type="button" class="variant-tab{% if loop.first %} active{% endif %}" data-step="{{ step.step_number }}" data-variant="{{ loop.index0 }}">Variant {{ variant.variant_label }}</button>
+                {% endfor %}
+              </div>
+              {% endif %}
+            </header>
+            {% for variant in step.variants %}
+            <div class="variant-panel step-body{% if not loop.first %} hidden{% endif %}" data-step="{{ step.step_number }}" data-variant="{{ loop.index0 }}">
+              {% if variant.subject %}
+              <div class="step-subject"><span class="eyebrow">Subject · {{ variant.variant_label }}</span><div class="step-subject-text">{{ variant.subject }}</div></div>
+              {% else %}
+              <div class="step-subject"><span class="eyebrow">Thread</span><div class="step-subject-text muted">Follow-up — same thread, no new subject</div></div>
+              {% endif %}
+              <pre class="email-body">{{ variant.body }}</pre>
+            </div>
+            {% endfor %}
+          </article>
+        </div>
         {% endfor %}
       </div>
-      {% endif %}
-      {% for variant in step.variants %}
-      <div class="variant-panel{% if not loop.first %} hidden{% endif %}" data-step="{{ step.step_number }}" data-variant="{{ loop.index0 }}">
-        {% if variant.subject %}
-        <div class="variant-subject"><span class="eyebrow">Subject {{ variant.variant_label }}</span><strong>{{ variant.subject }}</strong></div>
-        {% else %}
-        <div class="variant-subject muted">Follow-up — same thread, no new subject</div>
-        {% endif %}
-        <pre class="copy-preview">{{ variant.body }}</pre>
+
+      <details class="clean-details raw-json">
+        <summary>View raw plan JSON</summary>
+        <pre>{{ campaign.plan | tojson(indent=2) }}</pre>
+      </details>
+    </section>
+
+    <section class="detail-card" id="inbox-panel"
+             data-inbox-url="/api/campaigns/{{ campaign.id }}/inboxes"
+             data-apply-action="/api/campaigns/{{ campaign.id }}/inbox-selection">
+      <div class="card-head">
+        <h2 class="card-title">Inboxes</h2>
+        <button type="button" class="button secondary small" id="inbox-refresh">Refresh</button>
       </div>
-      {% endfor %}
-    </article>
-    {% endfor %}
-  </div>
-  <details class="clean-details">
-    <summary>Raw plan JSON</summary>
-    <pre>{{ campaign.plan | tojson(indent=2) }}</pre>
-  </details>
-</section>
+      <p class="card-lead">Recommended sending inboxes for {{ campaign.smartlead_client.label }}, by availability and capacity. Selected inboxes attach to the campaign on sync.</p>
+      <form method="post" id="inbox-form" class="js-single-submit">
+        <div id="inbox-content"><p class="muted">Loading inboxes…</p></div>
+        <div class="inbox-apply" id="inbox-actions" hidden>
+          <button type="submit">Apply selection</button>
+          <span class="muted" id="inbox-note"></span>
+        </div>
+      </form>
+    </section>
 
-<section class="panel" id="inbox-panel"
-         data-inbox-url="/api/campaigns/{{ campaign.id }}/inboxes"
-         data-apply-action="/api/campaigns/{{ campaign.id }}/inbox-selection">
-  <div class="section-heading">
-    <h2>Inboxes</h2>
-    <div class="header-actions">
-      <button type="button" class="button secondary" id="inbox-refresh">Refresh</button>
-    </div>
-  </div>
-  <p class="section-lead">Recommended sending inboxes for {{ campaign.smartlead_client.label }}, based on availability and capacity. Selected inboxes attach to the campaign on sync.</p>
-  <form method="post" id="inbox-form" class="js-single-submit">
-    <div id="inbox-content"><p class="muted">Loading inboxes…</p></div>
-    <div class="action-row" id="inbox-actions" hidden>
-      <button type="submit">Apply Selection</button>
-      <span class="muted" id="inbox-note"></span>
-    </div>
-  </form>
-</section>
-
-<section class="panel">
-  <details class="clean-details">
-    <summary>Optional AI Revision</summary>
-    <p class="section-lead">Request a targeted change in plain English. The previous plan is preserved if revision fails.</p>
-    <form method="post" action="/api/campaigns/{{ campaign.id }}/revise" class="inline-form">
-      <label>Instruction
-        <textarea name="revision_instruction" rows="3" placeholder="Example: make Email 2 shorter, keep all merge tags intact."></textarea>
-      </label>
-      <div><button type="submit">Revise with Claude</button></div>
-    </form>
-  </details>
-</section>
-{% endif %}
-
-<section class="panel">
-  <div class="section-heading">
-    <h2>Smartlead</h2>
-    {% if campaign.smartlead_campaign_id %}
-    <span class="badge">ID {{ campaign.smartlead_campaign_id }}</span>
+    {% if campaign.raw_input.messaging_text %}
+    <section class="detail-card">
+      <h2 class="card-title">Parsed messaging</h2>
+      {% if campaign.raw_input.parsed_messaging.warnings %}
+      <div class="notice warning">
+        <strong>Parser warnings — check your source file:</strong>
+        {% for w in campaign.raw_input.parsed_messaging.warnings %}<p>{{ w }}</p>{% endfor %}
+      </div>
+      {% endif %}
+      <details class="clean-details">
+        <summary>View parser output</summary>
+        <pre>{{ campaign.raw_input.parsed_messaging | tojson(indent=2) }}</pre>
+      </details>
+    </section>
     {% endif %}
-  </div>
-  {% if campaign.smartlead_campaign_id %}
-  <p class="section-lead">Inspect, analyze, archive, or delete the linked Smartlead campaign.</p>
-  <div class="action-row">
-    <a class="button secondary" href="/api/campaigns/{{ campaign.id }}/smartlead">Inspect</a>
-    <a class="button secondary" href="/api/campaigns/{{ campaign.id }}/analytics">Analytics</a>
-    <span class="spacer"></span>
-    <form method="post" action="/api/campaigns/{{ campaign.id }}/smartlead/archive" class="js-single-submit">
-      <button type="submit" class="secondary">Archive</button>
-    </form>
-    <form method="post" action="/api/campaigns/{{ campaign.id }}/smartlead/delete" class="js-single-submit" onsubmit="return confirm('Permanently delete this Smartlead campaign and associated data?');">
-      <button type="submit" class="danger">Delete</button>
-    </form>
-  </div>
-  {% else %}
-  <p class="muted">No Smartlead campaign linked yet. Sync the plan above to create one, or start from an existing Smartlead link on the New Campaign page.</p>
-  {% endif %}
-</section>
 
-<section class="panel">
-  <div class="section-heading">
-    <h2>Local Record</h2>
-  </div>
-  <p class="section-lead">
-    {% if campaign.smartlead_campaign_id %}
-    Remove this app record without deleting Smartlead campaign ID {{ campaign.smartlead_campaign_id }}.
     {% else %}
-    Delete this local draft from the dashboard.
+    <section class="detail-card">
+      <h2 class="card-title">No local plan</h2>
+      <p class="card-lead">{% if campaign.smartlead_campaign_id %}This Smartlead campaign is linked. Inspect or review analytics from the sidebar.{% else %}No plan yet. Create one from the New Campaign page.{% endif %}</p>
+    </section>
     {% endif %}
-  </p>
-  <form method="post" action="/api/campaigns/{{ campaign.id }}/local-delete" class="js-single-submit" onsubmit="return confirm('{% if campaign.smartlead_campaign_id %}Remove only the local record? The Smartlead campaign will not be deleted.{% else %}Delete this local draft?{% endif %}');">
-    <button type="submit" class="danger">{% if campaign.smartlead_campaign_id %}Remove Local Record{% else %}Delete Local Draft{% endif %}</button>
-  </form>
-</section>
-
-{% if campaign.raw_input.messaging_text %}
-<section class="panel">
-  <div class="section-heading"><h2>Parsed Messaging</h2></div>
-  <p class="section-lead">Raw parser output from the uploaded file or pasted text.</p>
-
-  {% if campaign.raw_input.parsed_messaging.warnings %}
-  <div class="notice warning">
-    <strong>Parser warnings - check your source file:</strong>
-    {% for w in campaign.raw_input.parsed_messaging.warnings %}
-    <p>{{ w }}</p>
-    {% endfor %}
   </div>
-  {% endif %}
 
-  <details class="clean-details">
-    <summary>View parser output</summary>
-    <pre>{{ campaign.raw_input.parsed_messaging | tojson(indent=2) }}</pre>
-  </details>
-</section>
-{% endif %}
+  <aside class="detail-sidebar">
+    <section class="detail-card sidebar-card">
+      <h3 class="sidebar-title">Overview</h3>
+      <div class="overview-list">
+        <div class="overview-row"><span class="muted">Status</span><span class="overview-value">{{ campaign.status_label }}</span></div>
+        <div class="overview-row"><span class="muted">Client</span><span class="overview-value">{{ campaign.smartlead_client.label }}</span></div>
+        <div class="overview-row"><span class="muted">Workspace</span><span class="overview-value">{{ campaign.workspace_name }}</span></div>
+        <div class="overview-row"><span class="muted">Smartlead ID</span><span class="overview-value">{% if campaign.smartlead_campaign_id %}{{ campaign.smartlead_campaign_id }}{% else %}—{% endif %}</span></div>
+        <div class="overview-row"><span class="muted">Updated</span><span class="overview-value">{% if campaign.updated_at %}{{ campaign.updated_at.strftime("%Y-%m-%d %H:%M IST") }}{% else %}—{% endif %}</span></div>
+      </div>
+    </section>
+
+    {% if campaign.smartlead_campaign_id %}
+    <section class="detail-card sidebar-card">
+      <h3 class="sidebar-title">Smartlead</h3>
+      <p class="card-lead">Inspect analytics or manage the linked Smartlead campaign.</p>
+      <div class="sidebar-btn-grid">
+        <a class="button secondary" href="/api/campaigns/{{ campaign.id }}/smartlead">Inspect</a>
+        <a class="button secondary" href="/api/campaigns/{{ campaign.id }}/analytics">Analytics</a>
+      </div>
+    </section>
+    {% endif %}
+
+    {% if campaign.has_local_plan %}
+    <details class="detail-card sidebar-card ai-revision">
+      <summary><span class="sidebar-title">AI revision</span><span class="ai-plus" aria-hidden="true">+</span></summary>
+      <p class="card-lead">Request a targeted change in plain English. The previous plan is kept if revision fails.</p>
+      <form method="post" action="/api/campaigns/{{ campaign.id }}/revise" class="inline-form">
+        <textarea name="revision_instruction" rows="3" placeholder="Example: make Email 2 shorter, keep all merge tags intact."></textarea>
+        <button type="submit" class="full-width">Revise with Claude</button>
+      </form>
+    </details>
+    {% endif %}
+
+    <section class="detail-card sidebar-card danger-zone">
+      <h3 class="danger-title">Danger zone</h3>
+      <div class="danger-actions">
+        {% if campaign.smartlead_campaign_id %}
+        <form method="post" action="/api/campaigns/{{ campaign.id }}/smartlead/archive" class="js-single-submit">
+          <button type="submit" class="button secondary full-width">Archive campaign</button>
+        </form>
+        <form method="post" action="/api/campaigns/{{ campaign.id }}/smartlead/delete" class="js-single-submit" onsubmit="return confirm('Permanently delete this Smartlead campaign and associated data?');">
+          <button type="submit" class="button danger full-width">Delete Smartlead campaign</button>
+        </form>
+        {% endif %}
+        <form method="post" action="/api/campaigns/{{ campaign.id }}/local-delete" class="js-single-submit" onsubmit="return confirm('{% if campaign.smartlead_campaign_id %}Remove only the local record? The Smartlead campaign will not be deleted.{% else %}Delete this local draft?{% endif %}');">
+          <button type="submit" class="button secondary full-width">{% if campaign.smartlead_campaign_id %}Remove local record{% else %}Delete local draft{% endif %}</button>
+        </form>
+      </div>
+    </section>
+  </aside>
+</div>
 {% endblock %}
 {% block scripts %}
 {% if campaign.has_local_plan %}
@@ -308,21 +274,20 @@
     const inboxRow = (r, checked) => {
       const prov = esc((r.provider || "").toLowerCase());
       return `
-      <tr>
-        <td class="inbox-check"><input type="checkbox" name="account_ids" value="${esc(r.account_id)}" data-cap="${cap(r.avail_capacity)}" data-provider="${prov}" ${checked ? "checked" : ""}></td>
-        <td class="inbox-email">${esc(r.email)}</td>
-        <td><span class="provider-badge ${prov}">${esc(r.provider)}</span></td>
-        <td class="num">${cap(r.avail_capacity)}</td>
-        <td><span class="warmup-${esc((r.warmup_state || "").toLowerCase())}">${esc(r.warmup_state)}</span></td>
-        <td class="muted">${esc(r.test_date)}</td>
-      </tr>`;
+      <label class="inbox-row">
+        <input type="checkbox" name="account_ids" value="${esc(r.account_id)}" data-cap="${cap(r.avail_capacity)}" data-provider="${prov}" ${checked ? "checked" : ""}>
+        <span class="inbox-email">${esc(r.email)}</span>
+        <span><span class="provider-badge ${prov}">${esc(r.provider)}</span></span>
+        <span class="num">${cap(r.avail_capacity)}</span>
+        <span class="num warmup-${esc((r.warmup_state || "").toLowerCase())}">${esc(r.warmup_state)}</span>
+      </label>`;
     };
 
     const inboxTable = (rows) => rows
-      ? `<table class="inbox-table">
-           <thead><tr><th></th><th>Inbox</th><th>Provider</th><th>Cap</th><th>Warmup</th><th>Test</th></tr></thead>
-           <tbody>${rows}</tbody>
-         </table>`
+      ? `<div class="inbox-grid">
+           <div class="inbox-grid-head"><span></span><span>Inbox</span><span>Provider</span><span class="num">Cap</span><span class="num">Warmup</span></div>
+           ${rows}
+         </div>`
       : "";
 
     const updateSummary = (needed) => {
@@ -338,10 +303,11 @@
       const bar = document.getElementById("inbox-capacity-fill");
       if (bar) { bar.style.width = pct + "%"; bar.classList.toggle("short", !ok); }
       const label = document.getElementById("inbox-capacity-label");
-      if (label) label.textContent = `${total} / ${needed} daily capacity selected (${checked.length} inboxes)`;
+      if (label) { label.textContent = `${total} / ${needed} daily capacity · ${checked.length} inboxes`; label.classList.toggle("short", !ok); }
       const chips = document.getElementById("inbox-provider-chips");
       if (chips) chips.innerHTML = `<span class="chip gmail">Gmail ${gmail}</span><span class="chip outlook">Outlook ${outlook}</span>`;
       note.textContent = ok ? "Capacity covers daily volume." : "Below daily volume — add more inboxes or free some up.";
+      note.classList.toggle("short", !ok);
     };
 
     const render = (data) => {
@@ -368,15 +334,14 @@
       }
 
       content.innerHTML = `
-        <div class="inbox-summary">
+        <div class="capacity-box">
           <div class="capacity-bar"><div id="inbox-capacity-fill" class="capacity-fill"></div></div>
-          <div class="inbox-summary-row">
-            <span id="inbox-capacity-label" class="muted"></span>
-            <span id="inbox-provider-chips"></span>
+          <div class="capacity-row">
+            <span id="inbox-capacity-label" class="capacity-label"></span>
+            <span id="inbox-provider-chips" class="capacity-chips"></span>
           </div>
-          ${data.shortfall ? '<p class="notice warning small">Total FREE capacity is below the daily volume for this campaign.</p>' : ""}
         </div>
-        <h3 class="inbox-subhead">Recommended (${(data.recommended || []).length})</h3>
+        ${data.shortfall ? '<p class="notice warning small">Total FREE capacity is below the daily volume for this campaign.</p>' : ""}
         ${inboxTable((data.recommended || []).map((r) => inboxRow(r, preselected.has(String(r.account_id)))).join("")) || '<p class="muted">No eligible FREE inboxes for this client.</p>'}
         ${extraFree.length ? `<details class="clean-details"><summary>More FREE inboxes (${extraFree.length})</summary>${inboxTable(extraFree.map((r) => inboxRow(r, preselected.has(String(r.account_id)))).join(""))}</details>` : ""}
         ${busyHtml ? `<details class="clean-details"><summary>Busy / excluded (${Object.values(busy).reduce((a, b) => a + b.length, 0)})</summary><div class="busy-list">${busyHtml}</div></details>` : ""}

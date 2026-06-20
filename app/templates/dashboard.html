@@ -7,68 +7,122 @@
     <p class="muted">Recent campaigns and their Smartlead status.</p>
   </div>
   <div class="header-actions">
-    <a class="button secondary" href="/campaigns/new#existing-smartlead-target">Edit Existing</a>
-    <a class="button" href="/campaigns/new">New Campaign</a>
+    <a class="button secondary" href="/campaigns/new#existing-smartlead-target">Edit existing</a>
+    <a class="button" href="/campaigns/new"><span class="button-plus" aria-hidden="true">+</span> New campaign</a>
   </div>
 </div>
-<section class="panel dashboard-panel">
+
+{% set synced_count = campaigns | selectattr('smartlead_id') | list | length %}
+{% set attention_count = campaigns | selectattr('status', 'in', ['failed', 'drafting']) | list | length %}
+<div class="stat-cards">
+  <div class="stat-card">
+    <div class="stat-head"><span class="stat-dot dot-accent"></span><span class="stat-label">Total</span></div>
+    <div class="stat-value">{{ campaigns | length }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-head"><span class="stat-dot dot-green"></span><span class="stat-label">Synced</span></div>
+    <div class="stat-value">{{ synced_count }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-head"><span class="stat-dot dot-amber"></span><span class="stat-label">Needs attention</span></div>
+    <div class="stat-value">{{ attention_count }}</div>
+  </div>
+</div>
+
+<section class="table-card">
+  <div class="table-toolbar">
+    <div class="filter-chips" role="group" aria-label="Filter campaigns">
+      <button type="button" class="filter-chip active" data-filter="all">All</button>
+      <button type="button" class="filter-chip" data-filter="synced">Synced</button>
+      <button type="button" class="filter-chip" data-filter="draft">Drafts</button>
+      <button type="button" class="filter-chip" data-filter="failed">Failed</button>
+    </div>
+    <div class="search-wrap">
+      <span class="search-glyph" aria-hidden="true">&#9906;</span>
+      <input type="search" id="campaign-search" placeholder="Search campaigns…" aria-label="Search campaigns">
+    </div>
+  </div>
+
   {% if campaigns %}
-  <table class="dashboard-table">
-    <thead>
-      <tr>
-        <th>Name</th>
-        <th>Status</th>
-        <th>Smartlead</th>
-        <th>Workspace</th>
-        <th>Updated</th>
-        <th class="actions-header"><span class="visually-hidden">Actions</span></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for campaign in campaigns %}
-      <tr>
-        <td class="campaign-name-cell"><a href="/campaigns/{{ campaign.id }}">{{ campaign.name }}</a></td>
-        <td class="status-cell"><span class="badge status-{{ campaign.status }}">{{ campaign.status_label }}</span></td>
-        <td class="smartlead-cell">
-          {% if campaign.smartlead_id %}
-          <span class="badge status-synced">{{ campaign.smartlead_state }}</span>
-          <span class="muted">ID {{ campaign.smartlead_id }}</span>
-          {% else %}
-          <span class="muted">{{ campaign.smartlead_state }}</span>
-          {% endif %}
-        </td>
-        <td class="workspace-cell">{{ campaign.workspace }}</td>
-        <td class="updated-cell muted">{% if campaign.updated_at %}{{ campaign.updated_at.strftime("%Y-%m-%d %H:%M IST") }}{% else %}-{% endif %}</td>
-        <td class="actions-cell">
-          <div class="row-actions">
-            <form method="post" action="/api/campaigns/{{ campaign.id }}/local-delete" class="js-single-submit" onsubmit="return confirm('{% if campaign.smartlead_id %}Remove only the local record? The Smartlead campaign will not be deleted.{% else %}Delete this local draft?{% endif %}');">
-              <button
-                type="submit"
-                class="icon-button danger"
+  <div class="grid-head">
+    <span>Name</span><span>Status</span><span>Smartlead</span><span>Workspace</span><span>Updated</span><span></span>
+  </div>
+  <div id="campaign-rows">
+    {% for campaign in campaigns %}
+    <div class="grid-row"
+         data-name="{{ campaign.name | lower }}"
+         data-status="{{ campaign.status }}"
+         data-synced="{{ 1 if campaign.smartlead_id else 0 }}">
+      <a class="grid-name" href="/campaigns/{{ campaign.id }}">{{ campaign.name }}</a>
+      <span><span class="badge status-{{ campaign.status }}">{{ campaign.status_label }}</span></span>
+      <span class="grid-smartlead">
+        {% if campaign.smartlead_id %}
+        <span class="badge status-synced">{{ campaign.smartlead_state }}</span>
+        <span class="muted">ID {{ campaign.smartlead_id }}</span>
+        {% else %}
+        <span class="muted">{{ campaign.smartlead_state }}</span>
+        {% endif %}
+      </span>
+      <span class="grid-workspace">{{ campaign.workspace }}</span>
+      <span class="grid-updated muted">{% if campaign.updated_at %}{{ campaign.updated_at.strftime("%Y-%m-%d %H:%M IST") }}{% else %}-{% endif %}</span>
+      <form method="post" action="/api/campaigns/{{ campaign.id }}/local-delete" class="js-single-submit grid-delete" onsubmit="return confirm('{% if campaign.smartlead_id %}Remove only the local record? The Smartlead campaign will not be deleted.{% else %}Delete this local draft?{% endif %}');">
+        <button type="submit" class="icon-button danger"
                 aria-label="{% if campaign.smartlead_id %}Remove local record{% else %}Delete local draft{% endif %}"
-                title="{% if campaign.smartlead_id %}Remove local record{% else %}Delete local draft{% endif %}"
-              >
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M3 6h18"></path>
-                  <path d="M8 6V4h8v2"></path>
-                  <path d="M19 6l-1 14H6L5 6"></path>
-                  <path d="M10 11v5"></path>
-                  <path d="M14 11v5"></path>
-                </svg>
-              </button>
-            </form>
-          </div>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+                title="{% if campaign.smartlead_id %}Remove local record{% else %}Delete local draft{% endif %}">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v5"></path><path d="M14 11v5"></path>
+          </svg>
+        </button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="grid-empty" id="grid-empty" hidden>
+    <h2>No matches</h2>
+    <p class="muted">No campaigns match your search or filter.</p>
+  </div>
   {% else %}
   <div class="empty-state">
     <h2>No campaigns yet</h2>
     <p class="muted">Create your first campaign to draft a sequence and sync it to Smartlead.</p>
-    <a class="button" href="/campaigns/new">New Campaign</a>
+    <a class="button" href="/campaigns/new">New campaign</a>
   </div>
   {% endif %}
 </section>
+{% endblock %}
+{% block scripts %}
+<script>
+  (() => {
+    const rows = [...document.querySelectorAll("#campaign-rows .grid-row")];
+    if (!rows.length) return;
+    const chips = [...document.querySelectorAll(".filter-chip")];
+    const search = document.getElementById("campaign-search");
+    const empty = document.getElementById("grid-empty");
+    let filter = "all";
+
+    const apply = () => {
+      const q = (search.value || "").trim().toLowerCase();
+      let shown = 0;
+      rows.forEach((row) => {
+        const synced = row.dataset.synced === "1";
+        const status = row.dataset.status;
+        let ok = true;
+        if (filter === "synced") ok = synced;
+        else if (filter === "draft") ok = !synced && status !== "failed";
+        else if (filter === "failed") ok = status === "failed";
+        if (ok && q) ok = row.dataset.name.includes(q);
+        row.hidden = !ok;
+        if (ok) shown += 1;
+      });
+      empty.hidden = shown !== 0;
+    };
+
+    chips.forEach((chip) => chip.addEventListener("click", () => {
+      chips.forEach((c) => c.classList.toggle("active", c === chip));
+      filter = chip.dataset.filter;
+      apply();
+    }));
+    search.addEventListener("input", apply);
+  })();
+</script>
 {% endblock %}

@@ -10,6 +10,8 @@ function titleFromFilename(filename) {
     .trim();
 }
 
+const dropzoneFile = document.querySelector("#dropzone-file");
+
 fileInput?.addEventListener("change", async () => {
   const file = fileInput.files?.[0];
   if (!file) return;
@@ -18,4 +20,19 @@ fileInput?.addEventListener("change", async () => {
   if (!campaignName.value.trim()) {
     campaignName.value = titleFromFilename(file.name);
   }
+  if (dropzoneFile) {
+    dropzoneFile.textContent = `Loaded: ${file.name}`;
+    dropzoneFile.hidden = false;
+  }
+});
+
+// Messaging input mode toggle (Upload file <-> Paste text).
+// Both inputs stay in the DOM so the form submits the same fields as before.
+document.querySelectorAll(".seg-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const mode = btn.dataset.mode;
+    document.querySelectorAll(".seg-btn").forEach((b) => b.classList.toggle("active", b === btn));
+    document.querySelectorAll(".mode-pane").forEach((pane) =>
+      pane.classList.toggle("hidden", pane.dataset.pane !== mode));
+  });
 });

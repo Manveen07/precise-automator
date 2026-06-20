@@ -612,7 +612,7 @@ def test_campaign_detail_renders_local_delete_for_draft(client):
     response = client.get(f"/campaigns/{doc['_id']}")
 
     assert response.status_code == 200
-    assert "Delete Local Draft" in response.text
+    assert "Delete local draft" in response.text
     assert f'/api/campaigns/{doc["_id"]}/local-delete' in response.text
 
 
@@ -962,3 +962,41 @@ def test_campaign_detail_uses_variant_tabs_for_multi_variant_step(client):
     assert 'class="variant-tabs"' in response.text
     assert 'class="variant-panel' in response.text
     assert "Subject One" in response.text and "Subject Two" in response.text
+
+
+def test_dashboard_renders_stat_cards_and_filters(client):
+    store.insert_campaign(
+        workspace_key="preciselead",
+        campaign_name="Dash Redesign",
+        raw_input={"workspace_key": "preciselead", "campaign_name": "Dash Redesign", "parsed_messaging": {}},
+        plan={"sequence": [], "schedule": {}, "settings": {}, "workspace_key": "preciselead"},
+        validation_errors=[],
+    )
+    response = client.get("/app")
+    assert response.status_code == 200
+    assert "stat-cards" in response.text
+    assert 'class="filter-chip' in response.text
+    assert 'class="grid-row"' in response.text
+    assert "campaign-search" in response.text
+
+
+def test_new_campaign_renders_toggle_and_dropzone(client):
+    response = client.get("/campaigns/new")
+    assert response.status_code == 200
+    assert 'class="segmented"' in response.text
+    assert 'class="dropzone"' in response.text
+    assert 'id="messaging-file"' in response.text
+    assert 'name="messaging_text"' in response.text
+    assert 'name="workspace_key"' in response.text
+    assert 'id="existing-smartlead-target"' in response.text
+
+
+def test_campaign_detail_renders_two_column_layout(client):
+    doc = _inbox_campaign()
+    response = client.get(f"/campaigns/{doc['_id']}")
+    assert response.status_code == 200
+    assert 'class="detail-grid"' in response.text
+    assert 'class="detail-sidebar"' in response.text
+    assert "Sequence plan" in response.text
+    assert "danger-zone" in response.text
+    assert "Overview" in response.text

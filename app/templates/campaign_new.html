@@ -1,55 +1,70 @@
 {% extends "base.html" %}
 {% block title %}New Campaign - Precise Automator{% endblock %}
 {% block content %}
-<div class="page-heading">
-  <div>
-    <h1>New Campaign</h1>
-    <p class="muted">Create a campaign from an uploaded messaging file or pasted sequence copy.</p>
-  </div>
-  <a class="button secondary" href="/app">Cancel</a>
-</div>
-<form class="panel form-panel js-single-submit" method="post" action="/api/campaigns/new" enctype="multipart/form-data">
-  <div class="grid">
-    <label>Workspace
-      <select name="workspace_key">
-        {% for workspace in workspaces %}
-        <option value="{{ workspace.key }}">{{ workspace.name }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>Campaign Name <span class="muted">(optional for existing Smartlead links)</span>
-      <input id="campaign-name" name="campaign_name" placeholder="e.g. Q2 Outbound - Series A SaaS">
-    </label>
-    <label>Max New Leads / Day
-      <input name="max_new_leads_per_day" type="number" min="1" max="500" value="100">
-    </label>
-  </div>
+<div class="form-narrow">
+  <a class="back-link" href="/app"><span aria-hidden="true">&#8592;</span> Back to campaigns</a>
+  <h1 class="form-title">New campaign</h1>
+  <p class="muted form-subtitle">Create a campaign from an uploaded messaging file or pasted sequence copy.</p>
 
-  <div id="existing-smartlead-target" class="inline-panel">
-    <label>Existing Smartlead Campaign <span class="muted">(optional)</span>
-      <input
-        id="smartlead-campaign-ref"
-        name="smartlead_campaign_ref"
-        placeholder="Paste Smartlead campaign link or ID"
-        autocomplete="off"
-      >
-    </label>
-    <p class="muted">When set, sync updates this Smartlead campaign instead of creating a new draft.</p>
-  </div>
+  <form class="form-stack js-single-submit" method="post" action="/api/campaigns/new" enctype="multipart/form-data">
 
-  <hr class="divider">
+    <section class="form-card">
+      <div class="form-card-head">
+        <span class="step-badge">1</span>
+        <h2>Campaign details</h2>
+      </div>
+      <div class="field-grid">
+        <div class="field">
+          <span class="field-label">Workspace</span>
+          <select class="input" name="workspace_key">
+            {% for workspace in workspaces %}
+            <option value="{{ workspace.key }}">{{ workspace.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <span class="field-label">Max new leads / day</span>
+          <input class="input" name="max_new_leads_per_day" type="number" min="1" max="500" value="100">
+        </div>
+        <div class="field span-2">
+          <span class="field-label">Campaign name <span class="label-note">— optional for existing Smartlead links</span></span>
+          <input class="input" id="campaign-name" name="campaign_name" placeholder="e.g. Melior — Q2 Outbound · Series A SaaS">
+        </div>
+      </div>
+      <div id="existing-smartlead-target" class="inset-panel">
+        <span class="field-label">Existing Smartlead campaign <span class="label-note">— optional</span></span>
+        <input class="input" id="smartlead-campaign-ref" name="smartlead_campaign_ref" placeholder="Paste Smartlead campaign link or ID" autocomplete="off">
+        <p class="muted field-help">When set, sync updates this Smartlead campaign instead of creating a new draft.</p>
+      </div>
+    </section>
 
-  <div class="upload-row">
-    <label class="file-field">Messaging File <span class="muted">(.txt)</span>
-      <input id="messaging-file" name="messaging_file" type="file" accept=".txt,text/plain">
-    </label>
-    <label>Sequence Name <span class="muted">(optional)</span>
-      <input name="selected_sequence_name" placeholder="Benchmark">
-    </label>
-  </div>
+    <section class="form-card">
+      <div class="form-card-head split">
+        <div class="form-card-title">
+          <span class="step-badge">2</span>
+          <h2>Messaging</h2>
+        </div>
+        <div class="segmented" role="tablist">
+          <button type="button" class="seg-btn active" data-mode="upload">Upload file</button>
+          <button type="button" class="seg-btn" data-mode="paste">Paste text</button>
+        </div>
+      </div>
 
-  <label>Or Paste Messaging
-    <textarea id="messaging-text" name="messaging_text" rows="16" placeholder="Subject Line Options:
+      <div class="mode-pane" data-pane="upload">
+        <label class="dropzone">
+          <span class="dropzone-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"></path><path d="M6 10l6-6 6 6"></path><path d="M4 20h16"></path></svg>
+          </span>
+          <span class="dropzone-title">Drop your <span class="accent">.txt</span> sequence file here</span>
+          <span class="dropzone-sub">or click to browse — we'll fill the campaign name from the filename</span>
+          <span class="dropzone-file" id="dropzone-file" hidden></span>
+          <input id="messaging-file" name="messaging_file" type="file" accept=".txt,text/plain" hidden>
+        </label>
+      </div>
+
+      <div class="mode-pane hidden" data-pane="paste">
+        <span class="field-label">Paste messaging</span>
+        <textarea class="input mono" id="messaging-text" name="messaging_text" rows="14" placeholder="Subject Line Options:
 1. Quick Benchmark
 
 Email 1
@@ -57,12 +72,19 @@ Email 1
 
 --- SPINTAX VERSION ---
 ..."></textarea>
-  </label>
+      </div>
 
-  <div class="form-actions">
-    <button type="submit">Create Campaign</button>
-    <a class="button secondary" href="/app">Cancel</a>
-  </div>
-</form>
+      <div class="field seq-name-field">
+        <span class="field-label">Sequence name <span class="label-note">— optional</span></span>
+        <input class="input" name="selected_sequence_name" placeholder="Benchmark">
+      </div>
+    </section>
+
+    <div class="form-actions end">
+      <a class="button secondary" href="/app">Cancel</a>
+      <button type="submit">Create campaign</button>
+    </div>
+  </form>
+</div>
 <script src="/static/campaign_new.js"></script>
 {% endblock %}
