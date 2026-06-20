@@ -37,6 +37,7 @@ from app.services.inbox_selection_service import select_inboxes
 from app.services.inbox_sheet_service import InboxSheetError, fetch_inbox_rows
 from app.services.local_plan_service import build_campaign_plan_from_input
 from app.services.parser_service import parse_messaging_file
+from app.services.sequence_builder import smartlead_html_to_text
 from app.services.smartlead_import_service import build_campaign_plan_from_smartlead
 from app.services.smartlead_service import SmartleadService
 from app.services.spintax_service import apply_spintax_to_plan, count_bodies_needing_spintax
@@ -46,6 +47,8 @@ from app.workers.sync_campaign import sync_campaign_now
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
+# Render Smartlead email bodies (HTML with <br> + spintax) as readable plain text.
+templates.env.filters["smartlead_text"] = smartlead_html_to_text
 
 
 # ----- Pages ----- #

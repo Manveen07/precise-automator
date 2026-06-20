@@ -1,43 +1,129 @@
 {% extends "base.html" %}
 {% block title %}{{ title }} - Precise Automator{% endblock %}
 {% block content %}
-<div class="page-heading">
-  <div>
+<a class="back-link" href="/campaigns/{{ campaign.id }}"><span aria-hidden="true">&#8592;</span> Back to campaign</a>
+
+<div class="detail-header">
+  <div class="detail-header-main">
     <h1>{{ title }}</h1>
-    <p class="muted">Smartlead ID {{ payload.smartlead_campaign_id }} for {{ campaign.campaign_name }}</p>
+    <div class="detail-subline">
+      <span class="muted">Smartlead ID {{ payload.smartlead_campaign_id }} · {{ campaign.campaign_name }}</span>
+      {% if payload.date_range %}<span class="muted">· {{ payload.date_range.start_date }} → {{ payload.date_range.end_date }}</span>{% endif %}
+    </div>
   </div>
-  <div class="header-actions">
-    <a class="button secondary" href="/campaigns/{{ campaign.id }}">Back to Campaign</a>
+  <div class="detail-actions">
     <a class="button secondary" href="{{ payload.smartlead_url }}" target="_blank" rel="noreferrer">Open in Smartlead</a>
   </div>
 </div>
 
 {% if payload.errors %}
-<section class="panel">
-  <div class="notice warning">
-    <strong>Some Smartlead data could not be loaded.</strong>
-    {% for error in payload.errors %}
-    <p>{{ error.section }}: {{ error.error }}</p>
-    {% endfor %}
-  </div>
-</section>
+<div class="notice warning report-notice">
+  <strong>Some Smartlead data could not be loaded.</strong>
+  {% for error in payload.errors %}<p>{{ error.section }}: {{ error.error }}</p>{% endfor %}
+</div>
 {% endif %}
 
 {% for section in sections %}
-<section class="panel">
-  <div class="section-heading">
-    <h2>{{ section.label }}</h2>
-    {% if section.ok %}
-    <span class="badge status-succeeded">loaded</span>
-    {% else %}
-    <span class="badge status-failed">failed</span>
+<section class="detail-card report-section">
+  <div class="card-head">
+    <h2 class="card-title">{{ section.label }}</h2>
+    {% if section.ok %}<span class="badge status-synced">loaded</span>{% else %}<span class="badge status-failed">failed</span>{% endif %}
+  </div>
+
+  {% if not section.ok %}
+  <div class="notice error"><p>{{ section.error }}</p></div>
+
+  {% elif section.key == "campaign" %}
+  {% set c = section.data %}
+  <div class="schedule-chips">
+    <div class="schedule-chip"><span class="chip-label">Status</span><span class="chip-value">{{ c.status | default('—') }}</span></div>
+    <div class="schedule-chip"><span class="chip-label">Max leads / day</span><span class="chip-value">{{ c.max_leads_per_day | default('—') }}</span></div>
+    <div class="schedule-chip"><span class="chip-label">Min gap</span><span class="chip-value">{{ c.min_time_btwn_emails | default('—') }} min</span></div>
+    <div class="schedule-chip"><span class="chip-label">Follow-up</span><span class="chip-value">{{ c.follow_up_percentage | default('—') }}%</span></div>
+    <div class="schedule-chip"><span class="chip-label">Plain text</span><span class="chip-value">{{ 'Yes' if c.send_as_plain_text else 'No' }}</span></div>
+    <div class="schedule-chip"><span class="chip-label">Tracking</span><span class="chip-value">Opens {{ 'off' if 'DONT_EMAIL_OPEN' in (c.track_settings or []) else 'on' }} · Clicks {{ 'off' if 'DONT_LINK_CLICK' in (c.track_settings or []) else 'on' }}</span></div>
+    {% if c.scheduler_cron_value %}
+    <div class="schedule-chip"><span class="chip-label">Send hours</span><span class="chip-value">{{ c.scheduler_cron_value.startHour }}–{{ c.scheduler_cron_value.endHour }}</span></div>
+    <div class="schedule-chip"><span class="chip-label">Timezone</span><span class="chip-value">{{ c.scheduler_cron_value.tz }}</span></div>
     {% endif %}
   </div>
-  {% if section.ok %}
-  <pre>{{ section.data | tojson(indent=2) }}</pre>
+
+  {% elif section.key == "sequences" %}
+  <div class="timeline">
+    {% for seq in section.data %}
+    <div class="timeline-item">
+      {% if seq.seq_delay_details and seq.seq_delay_details.delayInDays %}
+      <div class="delay-separator">
+        <span class="delay-line" aria-hidden="true"></span>
+        <span class="delay-arrow" aria-hidden="true">&#8595;</span>
+        <span class="muted">{{ seq.seq_delay_details.delayInDays }} day{% if seq.seq_delay_details.delayInDays != 1 %}s{% endif %} after previous email</span>
+      </div>
+      {% endif %}
+      <article class="step-card">
+        <header class="step-head">
+          <div class="step-head-left">
+            <span class="step-num">{{ seq.seq_number }}</span>
+            <strong>Email {{ seq.seq_number }}</strong>
+            <span class="muted step-timing">{{ seq.sequence_variants | length }} variant{% if seq.sequence_variants | length != 1 %}s{% endif %}</span>
+          </div>
+          {% if seq.sequence_variants | length > 1 %}
+          <div class="variant-tabs" role="tablist">
+            {% for v in seq.sequence_variants %}
+            <button type="button" class="variant-tab{% if loop.first %} active{% endif %}" data-step="s{{ seq.seq_number }}" data-variant="{{ loop.index0 }}">Variant {{ v.variant_label }}</button>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </header>
+        {% for v in seq.sequence_variants %}
+        <div class="variant-panel step-body{% if not loop.first %} hidden{% endif %}" data-step="s{{ seq.seq_number }}" data-variant="{{ loop.index0 }}">
+          {% if v.subject %}
+          <div class="step-subject"><span class="eyebrow">Subject · {{ v.variant_label }}</span><div class="step-subject-text">{{ v.subject }}</div></div>
+          {% else %}
+          <div class="step-subject"><span class="eyebrow">Thread</span><div class="step-subject-text muted">Follow-up — same thread, no new subject</div></div>
+          {% endif %}
+          <pre class="email-body smartlead-body">{{ v.email_body | smartlead_text }}</pre>
+        </div>
+        {% endfor %}
+      </article>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% elif section.data is mapping %}
+  <div class="kv-table">
+    {% for key, value in section.data.items() %}
+    <div class="kv-row">
+      <span class="kv-key">{{ key.replace('_', ' ') }}</span>
+      <span class="kv-value">{% if value is mapping or value is sequence and value is not string %}<code>{{ value | tojson }}</code>{% else %}{{ value }}{% endif %}</span>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% elif section.data is sequence and section.data is not string %}
+  <p class="muted">{{ section.data | length }} item{% if section.data | length != 1 %}s{% endif %}.</p>
+  <details class="clean-details"><summary>View data</summary><pre>{{ section.data | tojson(indent=2) }}</pre></details>
+
   {% else %}
-  <div class="notice error"><p>{{ section.error }}</p></div>
+  <pre>{{ section.data | tojson(indent=2) }}</pre>
+  {% endif %}
+
+  {% if section.ok and section.key in ["campaign", "sequences"] %}
+  <details class="clean-details raw-json"><summary>View raw JSON</summary><pre>{{ section.data | tojson(indent=2) }}</pre></details>
   {% endif %}
 </section>
 {% endfor %}
+{% endblock %}
+{% block scripts %}
+<script>
+  document.querySelectorAll(".variant-tab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      const step = tab.dataset.step;
+      const idx = tab.dataset.variant;
+      document.querySelectorAll(`.variant-tab[data-step="${step}"]`).forEach((t) =>
+        t.classList.toggle("active", t === tab));
+      document.querySelectorAll(`.variant-panel[data-step="${step}"]`).forEach((p) =>
+        p.classList.toggle("hidden", p.dataset.variant !== idx));
+    });
+  });
+</script>
 {% endblock %}

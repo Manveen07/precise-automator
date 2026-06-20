@@ -645,7 +645,8 @@ def test_smartlead_snapshot_html_renders_campaign_name(client, monkeypatch):
     )
 
     assert response.status_code == 200
-    assert "Smartlead ID 123 for HTML Snapshot Test" in response.text
+    assert "Smartlead ID 123" in response.text
+    assert "HTML Snapshot Test" in response.text
     assert "Campaign" in response.text
 
 
