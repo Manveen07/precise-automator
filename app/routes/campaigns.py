@@ -352,6 +352,15 @@ def _campaign_sheet_client(doc: dict, plan: dict) -> str | None:
     return get_sheet_client_for_workspace(workspace_key)
 
 
+def _campaign_subclient_key(doc: dict, plan: dict) -> str | None:
+    workspace_key = doc.get("smartlead_workspace") or plan.get("workspace_key")
+    if workspace_key == "preciselead":
+        campaign_name = doc.get("campaign_name") or plan.get("campaign_name") or ""
+        inferred = infer_smartlead_client("preciselead", campaign_name)
+        return inferred["key"] if inferred else "internal"
+    return None
+
+
 @router.get("/api/campaigns/{campaign_id}/inboxes")
 def recommend_campaign_inboxes(campaign_id: str) -> dict:
     doc = _require_campaign(campaign_id)
@@ -367,7 +376,8 @@ def recommend_campaign_inboxes(campaign_id: str) -> dict:
     except InboxSheetError as exc:
         return {"ok": False, "error": str(exc)}
 
-    result = select_inboxes(rows, client=client, needed_daily_volume=needed)
+    subclient_key = _campaign_subclient_key(doc, plan)
+    result = select_inboxes(rows, client=client, needed_daily_volume=needed, subclient_key=subclient_key)
     result["ok"] = True
     result["selected_account_ids"] = (plan.get("inbox_selection") or {}).get("email_account_ids") or []
     return result
@@ -389,7 +399,8 @@ def update_inbox_selection(
     if account_ids and client:
         try:
             rows = fetch_inbox_rows()
-            eligible_ids = {row["account_id"] for row in select_inboxes(rows, client=client, needed_daily_volume=1)["free_pool"]}
+            subclient_key = _campaign_subclient_key(doc, plan)
+            eligible_ids = {row["account_id"] for row in select_inboxes(rows, client=client, needed_daily_volume=1, subclient_key=subclient_key)["free_pool"]}
         except InboxSheetError:
             eligible_ids = None  # sheet unavailable: cannot validate, accept as submitted
         if eligible_ids is not None:

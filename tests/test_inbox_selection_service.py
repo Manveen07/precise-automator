@@ -109,3 +109,31 @@ def test_busy_rows_grouped_by_reason_for_diagnostics():
     result = select_inboxes(rows, client="PRECISE_LEADS", needed_daily_volume=5)
     assert set(result["busy"].keys()) == {"no_capacity", "stale_test"}
     assert result["busy"]["no_capacity"][0]["email"] == "b1@x.com"
+
+
+def test_subclient_domain_filtering():
+    rows = [
+        _row(Email="aaron@bettrdata.com", **{"Account ID": "1"}),
+        _row(Email="ken@melior.com", **{"Account ID": "2"}),
+        _row(Email="mark@opscteam.com", **{"Account ID": "3"}),
+        _row(Email="mark@staffaihq.com", **{"Account ID": "4"}),
+        _row(Email="shyam@gofloaters.in", **{"Account ID": "5"}),
+        _row(Email="avi@preciselead.in", **{"Account ID": "6"}),
+        _row(Email="old@capsulevideo.co", **{"Account ID": "7"}),
+    ]
+
+    # 1. Better Data
+    res = select_inboxes(rows, client="PRECISE_LEADS", needed_daily_volume=10, subclient_key="better_data")
+    assert [r["email"] for r in res["free_pool"]] == ["aaron@bettrdata.com"]
+
+    # 2. Ryan Markman / Melior
+    res = select_inboxes(rows, client="PRECISE_LEADS", needed_daily_volume=10, subclient_key="melior")
+    assert [r["email"] for r in res["free_pool"]] == ["ken@melior.com"]
+
+    # 3. Sri / SVSG
+    res = select_inboxes(rows, client="PRECISE_LEADS", needed_daily_volume=50, subclient_key="svsg")
+    assert set(r["email"] for r in res["free_pool"]) == {"mark@opscteam.com", "mark@staffaihq.com", "shyam@gofloaters.in"}
+
+    # 4. Internal / Precise Leads
+    res = select_inboxes(rows, client="PRECISE_LEADS", needed_daily_volume=10, subclient_key="internal")
+    assert [r["email"] for r in res["free_pool"]] == ["avi@preciselead.in"]

@@ -29,6 +29,12 @@ SMARTLEAD_WORKSPACES = [
         "api_key_env": "SMARTLEAD_DARLEAN_API_KEY",
         "sheet_client": "DARLEAN",
     },
+    {
+        "key": "mythic",
+        "name": "Mythic",
+        "api_key_env": "SMARTLEAD_MYTHIC_API_KEY",
+        "sheet_client": "Mythic",
+    },
 ]
 
 
@@ -47,10 +53,10 @@ SMARTLEAD_CLIENT_RULES = {
             "aliases": ("osc", "staff ai", "staffai", "svsg", "sri", "srivatsan"),
         },
         {
-            "key": "avench",
-            "name": "Anuroop / Avench",
+            "key": "better_data",
+            "name": "Better Data",
             "client_id": 88657,
-            "aliases": ("avench", "avenge", "anuroop"),
+            "aliases": ("better data", "better data at the analytics"),
         },
     ]
 }

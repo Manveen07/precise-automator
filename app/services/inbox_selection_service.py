@@ -86,8 +86,26 @@ def _dedup_by_account(rows: list[dict]) -> list[dict]:
     return list(best.values())
 
 
-def select_inboxes(rows: list[dict], client: str, needed_daily_volume: int) -> dict:
+def _is_subclient_eligible(row: dict, subclient_key: str | None) -> bool:
+    if not subclient_key:
+        return True
+    email = str(row.get("Email", "")).lower()
+    domain = email.split("@")[-1] if "@" in email else ""
+    if subclient_key == "better_data":
+        return "bettrdata" in domain
+    elif subclient_key == "melior":
+        return "melior" in domain
+    elif subclient_key == "svsg":
+        return any(x in domain for x in ["osc", "opsc", "staffai", "motionerp", "gofloaters"])
+    elif subclient_key == "internal":
+        return "preciselead" in domain
+    return True
+
+
+def select_inboxes(rows: list[dict], client: str, needed_daily_volume: int, subclient_key: str | None = None) -> dict:
     client_rows = [row for row in rows if str(row.get("Client", "")).strip() == client]
+    if client == "PRECISE_LEADS":
+        client_rows = [row for row in client_rows if _is_subclient_eligible(row, subclient_key)]
     eligible = _dedup_by_account([row for row in client_rows if _is_eligible(row, client)])
     eligible.sort(key=_rank_key)
 

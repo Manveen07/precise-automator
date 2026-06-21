@@ -106,8 +106,8 @@ def test_sequence_sync_mismatches_reports_missing_or_changed_copy():
         ("Staff AI follow-up", 145916),
         ("SVSG net-new", 145916),
         ("Sri reactivation", 145916),
-        ("Avenge pilot", 88657),
-        ("Avench sequence", 88657),
+        ("Better Data pilot", 88657),
+        ("better data at the analytics sequence", 88657),
     ],
 )
 def test_infer_smartlead_client_from_campaign_name(campaign_name, expected_client_id):

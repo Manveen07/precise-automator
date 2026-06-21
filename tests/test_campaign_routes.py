@@ -821,7 +821,7 @@ def test_sync_rejects_when_validation_errors_exist(client):
 def _inbox_row(**overrides):
     base = {
         "Client": "PRECISE_LEADS",
-        "Email": "a@x.com",
+        "Email": "a@preciselead.in",
         "Provider": "Gmail",
         "Account ID": "1001",
         "Availability": "FREE",
@@ -862,7 +862,7 @@ def _inbox_campaign():
 
 def test_get_inboxes_recommends_only_the_campaign_client(client, monkeypatch):
     rows = [
-        _inbox_row(Email="mine@x.com", Client="PRECISE_LEADS", **{"Account ID": "1001"}),
+        _inbox_row(Email="mine@preciselead.in", Client="PRECISE_LEADS", **{"Account ID": "1001"}),
         _inbox_row(Email="other@x.com", Client="DARLEAN", **{"Account ID": "2002"}),
     ]
     monkeypatch.setattr(campaigns, "fetch_inbox_rows", lambda *a, **k: rows)
@@ -874,7 +874,7 @@ def test_get_inboxes_recommends_only_the_campaign_client(client, monkeypatch):
     assert body["ok"] is True
     assert body["client"] == "PRECISE_LEADS"
     emails = {r["email"] for r in body["free_pool"]}
-    assert emails == {"mine@x.com"}
+    assert emails == {"mine@preciselead.in"}
 
 
 def test_get_inboxes_reports_sheet_error_without_crashing(client, monkeypatch):
@@ -895,8 +895,8 @@ def test_get_inboxes_reports_sheet_error_without_crashing(client, monkeypatch):
 
 def test_post_inbox_selection_persists_account_ids(client, monkeypatch):
     rows = [
-        _inbox_row(Email="a@x.com", **{"Account ID": "1001"}),
-        _inbox_row(Email="b@x.com", **{"Account ID": "1002"}),
+        _inbox_row(Email="a@preciselead.in", **{"Account ID": "1001"}),
+        _inbox_row(Email="b@preciselead.in", **{"Account ID": "1002"}),
     ]
     monkeypatch.setattr(campaigns, "fetch_inbox_rows", lambda *a, **k: rows)
     doc = _inbox_campaign()
@@ -915,7 +915,7 @@ def test_post_inbox_selection_persists_account_ids(client, monkeypatch):
 
 
 def test_post_inbox_selection_rejects_ineligible_account(client, monkeypatch):
-    rows = [_inbox_row(Email="a@x.com", **{"Account ID": "1001"})]
+    rows = [_inbox_row(Email="a@preciselead.in", **{"Account ID": "1001"})]
     monkeypatch.setattr(campaigns, "fetch_inbox_rows", lambda *a, **k: rows)
     doc = _inbox_campaign()
 
