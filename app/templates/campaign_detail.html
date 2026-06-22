@@ -385,7 +385,7 @@
             <span id="inbox-provider-chips" class="capacity-chips"></span>
           </div>
         </div>
-        ${data.shortfall ? '<p class="notice warning small">Total FREE capacity is below the daily volume for this campaign.</p>' : ""}
+        ${(data.warnings || []).map((w) => `<p class="notice warning small">${esc(w)}</p>`).join("")}
         ${inboxTable((data.recommended || []).map((r) => inboxRow(r, preselected.has(String(r.account_id)))).join("")) || '<p class="muted">No eligible FREE inboxes for this client.</p>'}
         ${extraFree.length ? `<details class="clean-details"><summary>More FREE inboxes (${extraFree.length})</summary>${inboxTable(extraFree.map((r) => inboxRow(r, preselected.has(String(r.account_id)))).join(""))}</details>` : ""}
         ${busyHtml ? `<details class="clean-details"><summary>Busy / excluded (${Object.values(busy).reduce((a, b) => a + b.length, 0)})</summary><div class="busy-list">${busyHtml}</div></details>` : ""}

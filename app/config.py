@@ -45,21 +45,37 @@ SMARTLEAD_CLIENT_RULES = {
             "name": "Ryan Markman / Melior",
             "client_id": 12256,
             "aliases": ("melior", "ryan markman"),
+            # Email-domain substrings identifying this sub-client's inboxes in the sheet.
+            "inbox_domains": ("melior",),
         },
         {
             "key": "svsg",
             "name": "Srivatsan / SVSG",
             "client_id": 145916,
             "aliases": ("osc", "staff ai", "staffai", "svsg", "sri", "srivatsan"),
+            "inbox_domains": ("osc", "opsc", "staffai", "motionerp", "gofloaters"),
         },
         {
             "key": "better_data",
             "name": "Better Data",
             "client_id": 88657,
             "aliases": ("better data", "better data at the analytics"),
+            "inbox_domains": ("bettrdata",),
         },
     ]
 }
+
+
+def subclient_inbox_domains(workspace_key: str) -> dict[str, tuple[str, ...]]:
+    """Map of sub-client key -> inbox email-domain substrings for a workspace.
+
+    Drives sub-client inbox filtering. Editing the domains here is the single place to
+    teach the recommender about a new sub-client domain.
+    """
+    return {
+        rule["key"]: tuple(rule.get("inbox_domains", ()))
+        for rule in SMARTLEAD_CLIENT_RULES.get(workspace_key, [])
+    }
 
 
 class Settings(BaseSettings):

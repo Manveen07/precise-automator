@@ -138,3 +138,17 @@ def test_subclient_domain_filtering():
     #    (preciselead.in plus any inbox that matches no sub-client, e.g. capsulevideo.co).
     res = select_inboxes(rows, client="PRECISE_LEADS", needed_daily_volume=50, subclient_key="internal")
     assert set(r["email"] for r in res["free_pool"]) == {"avi@preciselead.in", "old@capsulevideo.co"}
+
+
+def test_subclient_with_no_eligible_inboxes_emits_warning():
+    # Only a melior inbox present, but we ask for better_data -> nothing eligible.
+    rows = [_row(Email="ken@melior.com", **{"Account ID": "1"})]
+    res = select_inboxes(rows, client="PRECISE_LEADS", needed_daily_volume=10, subclient_key="better_data")
+    assert res["free_pool"] == []
+    assert any("better_data" in w for w in res["warnings"])
+
+
+def test_warnings_empty_when_capacity_covers_volume():
+    rows = [_row(Email="a@bettrdata.com", **{"Account ID": "1", "Avail. Capacity": 30})]
+    res = select_inboxes(rows, client="PRECISE_LEADS", needed_daily_volume=10, subclient_key="better_data")
+    assert res["warnings"] == []

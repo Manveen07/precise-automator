@@ -5,6 +5,7 @@ follows the team's documented algorithm: filter to the client's eligible FREE in
 dedup by account, rank them (unassigned + highest capacity first), then greedily pick the
 fewest inboxes whose combined capacity covers the needed daily volume.
 """
+from app.config import subclient_inbox_domains
 
 
 def _to_float(value, default: float = 0.0) -> float:
@@ -86,13 +87,10 @@ def _dedup_by_account(rows: list[dict]) -> list[dict]:
     return list(best.values())
 
 
-# Sub-client domain signatures within the PreciseLead Smartlead account. Email-domain
-# substrings are a workaround until the sheet carries a sub-client column.
-_SUBCLIENT_DOMAIN_MATCHERS = {
-    "better_data": ("bettrdata",),
-    "melior": ("melior",),
-    "svsg": ("osc", "opsc", "staffai", "motionerp", "gofloaters"),
-}
+# Sub-client domain signatures within the PreciseLead Smartlead account, sourced from
+# config (the single place to edit). Email-domain substrings are a workaround until the
+# sheet carries a sub-client column.
+_SUBCLIENT_DOMAIN_MATCHERS = subclient_inbox_domains("preciselead")
 
 
 def _domain_matches_subclient(domain: str, subclient_key: str) -> bool:
@@ -140,7 +138,21 @@ def select_inboxes(rows: list[dict], client: str, needed_daily_volume: int, subc
         reason = str(row.get("Busy Reason", "")).strip() or "other"
         busy.setdefault(reason, []).append(_row_view(row))
 
+    warnings: list[str] = []
+    label = f"sub-client '{subclient_key}'" if subclient_key else f"client '{client}'"
+    if not eligible:
+        warnings.append(
+            f"No eligible FREE inboxes for {label}. Check the inbox sheet or domain mapping, "
+            f"or free up busy inboxes."
+        )
+    elif total_capacity < needed_daily_volume:
+        warnings.append(
+            f"Eligible capacity ({int(total_capacity)}) is below the {needed_daily_volume} "
+            f"daily volume for {label}."
+        )
+
     return {
+        "warnings": warnings,
         "client": client,
         "needed_daily_volume": needed_daily_volume,
         "recommended": [_row_view(row) for row in picked],
