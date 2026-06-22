@@ -66,6 +66,12 @@ SMARTLEAD_CLIENT_RULES = {
 }
 
 
+# PreciseLeads' OWN sending infrastructure (the "internal" sub-client). Any other
+# PRECISE_LEADS inbox that matches neither an active sub-client nor these domains belongs
+# to an OLD/inactive client and must NOT be suggested for any current campaign.
+PRECISELEAD_INTERNAL_DOMAINS = ("preciselead",)
+
+
 def subclient_inbox_domains(workspace_key: str) -> dict[str, tuple[str, ...]]:
     """Map of sub-client key -> inbox email-domain substrings for a workspace.
 

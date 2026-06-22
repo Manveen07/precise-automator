@@ -5,7 +5,7 @@ follows the team's documented algorithm: filter to the client's eligible FREE in
 dedup by account, rank them (unassigned + highest capacity first), then greedily pick the
 fewest inboxes whose combined capacity covers the needed daily volume.
 """
-from app.config import subclient_inbox_domains
+from app.config import PRECISELEAD_INTERNAL_DOMAINS, subclient_inbox_domains
 
 
 def _to_float(value, default: float = 0.0) -> float:
@@ -115,9 +115,10 @@ def _is_subclient_eligible(row: dict, subclient_key: str | None) -> bool:
         return True
     email = str(row.get("Email", "")).lower()
     domain = email.split("@")[-1] if "@" in email else ""
-    # "internal" = PreciseLeads' own inboxes: anything that is NOT a known sub-client.
+    # "internal" = PreciseLeads' OWN inboxes only (preciselead domains). Inboxes that match
+    # neither an active sub-client nor these are OLD clients and are excluded from everything.
     if subclient_key == "internal":
-        return not any(_domain_matches_subclient(domain, key) for key in _SUBCLIENT_DOMAIN_MATCHERS)
+        return any(sig in domain for sig in PRECISELEAD_INTERNAL_DOMAINS)
     if subclient_key in _SUBCLIENT_DOMAIN_MATCHERS:
         return _domain_matches_subclient(domain, subclient_key)
     return True
