@@ -86,19 +86,29 @@ def _dedup_by_account(rows: list[dict]) -> list[dict]:
     return list(best.values())
 
 
+# Sub-client domain signatures within the PreciseLead Smartlead account. Email-domain
+# substrings are a workaround until the sheet carries a sub-client column.
+_SUBCLIENT_DOMAIN_MATCHERS = {
+    "better_data": ("bettrdata",),
+    "melior": ("melior",),
+    "svsg": ("osc", "opsc", "staffai", "motionerp", "gofloaters"),
+}
+
+
+def _domain_matches_subclient(domain: str, subclient_key: str) -> bool:
+    return any(sig in domain for sig in _SUBCLIENT_DOMAIN_MATCHERS.get(subclient_key, ()))
+
+
 def _is_subclient_eligible(row: dict, subclient_key: str | None) -> bool:
     if not subclient_key:
         return True
     email = str(row.get("Email", "")).lower()
     domain = email.split("@")[-1] if "@" in email else ""
-    if subclient_key == "better_data":
-        return "bettrdata" in domain
-    elif subclient_key == "melior":
-        return "melior" in domain
-    elif subclient_key == "svsg":
-        return any(x in domain for x in ["osc", "opsc", "staffai", "motionerp", "gofloaters"])
-    elif subclient_key == "internal":
-        return "preciselead" in domain
+    # "internal" = PreciseLeads' own inboxes: anything that is NOT a known sub-client.
+    if subclient_key == "internal":
+        return not any(_domain_matches_subclient(domain, key) for key in _SUBCLIENT_DOMAIN_MATCHERS)
+    if subclient_key in _SUBCLIENT_DOMAIN_MATCHERS:
+        return _domain_matches_subclient(domain, subclient_key)
     return True
 
 

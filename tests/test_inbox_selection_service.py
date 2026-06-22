@@ -134,6 +134,7 @@ def test_subclient_domain_filtering():
     res = select_inboxes(rows, client="PRECISE_LEADS", needed_daily_volume=50, subclient_key="svsg")
     assert set(r["email"] for r in res["free_pool"]) == {"mark@opscteam.com", "mark@staffaihq.com", "shyam@gofloaters.in"}
 
-    # 4. Internal / Precise Leads
-    res = select_inboxes(rows, client="PRECISE_LEADS", needed_daily_volume=10, subclient_key="internal")
-    assert [r["email"] for r in res["free_pool"]] == ["avi@preciselead.in"]
+    # 4. Internal / Precise Leads = everything that is NOT another sub-client
+    #    (preciselead.in plus any inbox that matches no sub-client, e.g. capsulevideo.co).
+    res = select_inboxes(rows, client="PRECISE_LEADS", needed_daily_volume=50, subclient_key="internal")
+    assert set(r["email"] for r in res["free_pool"]) == {"avi@preciselead.in", "old@capsulevideo.co"}
