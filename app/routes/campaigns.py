@@ -377,7 +377,14 @@ def recommend_campaign_inboxes(campaign_id: str) -> dict:
         return {"ok": False, "error": str(exc)}
 
     subclient_key = _campaign_subclient_key(doc, plan)
-    result = select_inboxes(rows, client=client, needed_daily_volume=needed, subclient_key=subclient_key)
+    provider_mix = (plan.get("inbox_selection") or {}).get("provider_mix")
+    result = select_inboxes(
+        rows,
+        client=client,
+        needed_daily_volume=needed,
+        subclient_key=subclient_key,
+        provider_mix=provider_mix,
+    )
     result["ok"] = True
     result["selected_account_ids"] = (plan.get("inbox_selection") or {}).get("email_account_ids") or []
     return result

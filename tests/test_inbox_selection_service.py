@@ -152,3 +152,90 @@ def test_warnings_empty_when_capacity_covers_volume():
     rows = [_row(Email="a@bettrdata.com", **{"Account ID": "1", "Avail. Capacity": 30})]
     res = select_inboxes(rows, client="PRECISE_LEADS", needed_daily_volume=10, subclient_key="better_data")
     assert res["warnings"] == []
+
+
+def test_ratio_selection_70_30():
+    # Needed volume: 100
+    # Targets: Gmail = 70, Outlook = 30
+    # Gmail: [50, 50], Outlook: [40]
+    # Expect: Gmail1, Gmail2, Outlook1
+    rows = [
+        _row(Email="g1@x.com", Provider="Gmail", **{"Account ID": "1", "Avail. Capacity": 50}),
+        _row(Email="g2@x.com", Provider="Gmail", **{"Account ID": "2", "Avail. Capacity": 50}),
+        _row(Email="o1@x.com", Provider="Outlook", **{"Account ID": "3", "Avail. Capacity": 40}),
+    ]
+    res = select_inboxes(
+        rows,
+        client="PRECISE_LEADS",
+        needed_daily_volume=100,
+        provider_mix={"gmail": 0.7, "outlook": 0.3}
+    )
+    emails = {r["email"] for r in res["recommended"]}
+    assert emails == {"g1@x.com", "g2@x.com", "o1@x.com"}
+    assert res["provider_counts"] == {"gmail": 2, "outlook": 1}
+    assert res["estimated_daily_capacity"] == 140
+
+
+def test_ratio_selection_no_outlook():
+    # Needed volume: 100
+    # Targets: Gmail = 70, Outlook = 30
+    # Gmail: [50, 50], Outlook: []
+    # Expect: Gmail1, Gmail2 (total 100 capacity)
+    rows = [
+        _row(Email="g1@x.com", Provider="Gmail", **{"Account ID": "1", "Avail. Capacity": 50}),
+        _row(Email="g2@x.com", Provider="Gmail", **{"Account ID": "2", "Avail. Capacity": 50}),
+    ]
+    res = select_inboxes(
+        rows,
+        client="PRECISE_LEADS",
+        needed_daily_volume=100,
+        provider_mix={"gmail": 0.7, "outlook": 0.3}
+    )
+    emails = {r["email"] for r in res["recommended"]}
+    assert emails == {"g1@x.com", "g2@x.com"}
+    assert res["provider_counts"] == {"gmail": 2, "outlook": 0}
+    assert res["estimated_daily_capacity"] == 100
+
+
+def test_ratio_selection_outlook_shortfall():
+    # Needed volume: 100
+    # Targets: Gmail = 70, Outlook = 30
+    # Gmail: [50, 50], Outlook: [10]
+    # Outlook shortfall: 20 -> Add to Gmail target -> Gmail target becomes 90.
+    # Gmail pool has capacity 100, which satisfies 90.
+    # Expect: Gmail1, Gmail2, Outlook1
+    rows = [
+        _row(Email="g1@x.com", Provider="Gmail", **{"Account ID": "1", "Avail. Capacity": 50}),
+        _row(Email="g2@x.com", Provider="Gmail", **{"Account ID": "2", "Avail. Capacity": 50}),
+        _row(Email="o1@x.com", Provider="Outlook", **{"Account ID": "3", "Avail. Capacity": 10}),
+    ]
+    res = select_inboxes(
+        rows,
+        client="PRECISE_LEADS",
+        needed_daily_volume=100,
+        provider_mix={"gmail": 0.7, "outlook": 0.3}
+    )
+    emails = {r["email"] for r in res["recommended"]}
+    assert emails == {"g1@x.com", "g2@x.com", "o1@x.com"}
+    assert res["provider_counts"] == {"gmail": 2, "outlook": 1}
+    assert res["estimated_daily_capacity"] == 110
+
+
+def test_neg_date_key_robustness():
+    from app.services.inbox_selection_service import _neg_date_key
+    assert _neg_date_key("2026-06-22") == -20260622
+    assert _neg_date_key("2026/06/22") == -20260622
+    assert _neg_date_key("22-06-2026") == -20260622
+    assert _neg_date_key("22/06/2026") == -20260622
+    assert _neg_date_key("invalid-date") == 0
+
+
+def test_get_provider_robustness():
+    from app.services.inbox_selection_service import _get_provider
+    assert _get_provider({"Provider": "Google Apps"}) == "gmail"
+    assert _get_provider({"Provider": "Gmail Workspace"}) == "gmail"
+    assert _get_provider({"Provider": "Office365"}) == "outlook"
+    assert _get_provider({"Provider": "Outlook.com"}) == "outlook"
+    assert _get_provider({"Provider": "Exchange Server"}) == "outlook"
+    assert _get_provider({"Provider": "Custom SMTP"}) == "custom smtp"
+

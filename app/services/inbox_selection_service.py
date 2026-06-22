@@ -28,12 +28,25 @@ def _account_id(value) -> int | None:
 
 
 def _neg_date_key(value) -> int:
-    """ISO date -> negative integer so fresher (larger) dates sort first in ascending order."""
-    try:
-        year, month, day = str(value).split("-")
-        return -(int(year) * 10000 + int(month) * 100 + int(day))
-    except (ValueError, AttributeError):
+    """ISO date or other date format -> negative integer so fresher (larger) dates sort first."""
+    if not value:
         return 0
+    s = str(value).strip()
+    for sep in ("-", "/", "."):
+        if sep in s:
+            parts = s.split(sep)
+            if len(parts) == 3:
+                try:
+                    if len(parts[0]) == 4:
+                        year, month, day = int(parts[0]), int(parts[1]), int(parts[2])
+                    elif len(parts[2]) == 4:
+                        day, month, year = int(parts[0]), int(parts[1]), int(parts[2])
+                    else:
+                        continue
+                    return -(year * 10000 + month * 100 + day)
+                except ValueError:
+                    pass
+    return 0
 
 
 def _is_eligible(row: dict, client: str) -> bool:
@@ -110,7 +123,22 @@ def _is_subclient_eligible(row: dict, subclient_key: str | None) -> bool:
     return True
 
 
-def select_inboxes(rows: list[dict], client: str, needed_daily_volume: int, subclient_key: str | None = None) -> dict:
+def _get_provider(row: dict) -> str:
+    prov = str(row.get("Provider", "")).strip().lower()
+    if "gmail" in prov or "google" in prov:
+        return "gmail"
+    if "outlook" in prov or "office" in prov or "microsoft" in prov or "exchange" in prov:
+        return "outlook"
+    return prov
+
+
+def select_inboxes(
+    rows: list[dict],
+    client: str,
+    needed_daily_volume: int,
+    subclient_key: str | None = None,
+    provider_mix: dict[str, float] | None = None,
+) -> dict:
     client_rows = [row for row in rows if str(row.get("Client", "")).strip() == client]
     if client == "PRECISE_LEADS":
         client_rows = [row for row in client_rows if _is_subclient_eligible(row, subclient_key)]
@@ -118,17 +146,63 @@ def select_inboxes(rows: list[dict], client: str, needed_daily_volume: int, subc
     eligible.sort(key=_rank_key)
 
     total_capacity = sum(_to_float(row.get("Avail. Capacity")) for row in eligible)
-    # Greedy fill: walk the ranked list (unassigned + highest capacity first) and stop as
-    # soon as the running capacity covers the needed daily volume. This avoids over-
-    # provisioning — picking the fewest inboxes that meet the target rather than sizing by
-    # average capacity (which overshoots when high- and low-capacity inboxes are mixed).
+    
     picked: list[dict] = []
-    running = 0.0
-    for row in eligible:
-        if running >= needed_daily_volume:
-            break
-        picked.append(row)
-        running += _to_float(row.get("Avail. Capacity"))
+    
+    if provider_mix:
+        # Standardize provider keys in the mix
+        mix = {k.lower(): weight for k, weight in provider_mix.items()}
+        
+        # Split eligible list into pools while keeping them sorted by rank
+        pools: dict[str, list[dict]] = {}
+        for row in eligible:
+            prov = _get_provider(row)
+            pools.setdefault(prov, []).append(row)
+            
+        picked_by_provider: dict[str, list[dict]] = {}
+        capacity_by_provider: dict[str, float] = {}
+        
+        # Primary pass: fill each provider's target capacity
+        for prov_key, weight in mix.items():
+            target_cap = weight * needed_daily_volume
+            pool = pools.get(prov_key, [])
+            picked_list: list[dict] = []
+            cap = 0.0
+            for row in pool:
+                if cap >= target_cap:
+                    break
+                picked_list.append(row)
+                cap += _to_float(row.get("Avail. Capacity"))
+            picked_by_provider[prov_key] = picked_list
+            capacity_by_provider[prov_key] = cap
+            
+        # Combine picked lists
+        for prov_key, picked_list in picked_by_provider.items():
+            picked.extend(picked_list)
+            
+        total_picked_cap = sum(capacity_by_provider.values())
+        
+        # Fallback pass: if total capacity is still below needed, pick from any remaining unpicked inboxes
+        if total_picked_cap < needed_daily_volume:
+            picked_ids = {_account_id(row.get("Account ID")) for row in picked}
+            remaining = [row for row in eligible if _account_id(row.get("Account ID")) not in picked_ids]
+            
+            for row in remaining:
+                if total_picked_cap >= needed_daily_volume:
+                    break
+                picked.append(row)
+                total_picked_cap += _to_float(row.get("Avail. Capacity"))
+                
+        # Sort the final picked list back to standard ranking order
+        picked.sort(key=_rank_key)
+    else:
+        # Standard greedy selection
+        running = 0.0
+        for row in eligible:
+            if running >= needed_daily_volume:
+                break
+            picked.append(row)
+            running += _to_float(row.get("Avail. Capacity"))
 
     busy: dict[str, list[dict]] = {}
     eligible_accounts = {_account_id(row.get("Account ID")) for row in eligible}
@@ -161,8 +235,8 @@ def select_inboxes(rows: list[dict], client: str, needed_daily_volume: int, subc
         "busy": busy,
         "estimated_daily_capacity": sum(_to_float(row.get("Avail. Capacity")) for row in picked),
         "provider_counts": {
-            "gmail": sum(1 for row in picked if str(row.get("Provider", "")).strip().lower() == "gmail"),
-            "outlook": sum(1 for row in picked if str(row.get("Provider", "")).strip().lower() == "outlook"),
+            "gmail": sum(1 for row in picked if _get_provider(row) == "gmail"),
+            "outlook": sum(1 for row in picked if _get_provider(row) == "outlook"),
         },
         "shortfall": total_capacity < needed_daily_volume,
         "eligible_count": len(eligible),

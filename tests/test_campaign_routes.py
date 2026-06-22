@@ -877,7 +877,48 @@ def test_get_inboxes_recommends_only_the_campaign_client(client, monkeypatch):
     assert emails == {"mine@preciselead.in"}
 
 
+def test_get_inboxes_respects_provider_mix(client, monkeypatch):
+    rows = [
+        _inbox_row(Email="g1@preciselead.in", Client="PRECISE_LEADS", Provider="Gmail", **{"Account ID": "1001", "Avail. Capacity": 50}),
+        _inbox_row(Email="o1@preciselead.in", Client="PRECISE_LEADS", Provider="Outlook", **{"Account ID": "1002", "Avail. Capacity": 50}),
+    ]
+    monkeypatch.setattr(campaigns, "fetch_inbox_rows", lambda *a, **k: rows)
+    
+    doc = store.insert_campaign(
+        workspace_key="preciselead",
+        campaign_name="Inbox Test Ratio",
+        raw_input={"workspace_key": "preciselead", "campaign_name": "Inbox Test Ratio", "parsed_messaging": {}},
+        plan={
+            "workspace_key": "preciselead",
+            "campaign_name": "Inbox Test Ratio",
+            "template_family": "cold_email_standard_v1",
+            "schedule": {"max_new_leads_per_day": 100},
+            "settings": {},
+            "inbox_selection": {
+                "mode": "recommend",
+                "email_account_ids": [],
+                "provider_mix": {"gmail": 0.5, "outlook": 0.5}
+            },
+            "sequence": [
+                {"step_number": 1, "delay_days": 0, "variants": [{"variant_label": "A", "subject": "Hi", "body": "Body"}]},
+            ],
+            "approval_required": True,
+            "notes_for_operator": [],
+        },
+        validation_errors=[],
+    )
+    
+    response = client.get(f"/api/campaigns/{doc['_id']}/inboxes")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    emails = {r["email"] for r in body["recommended"]}
+    assert emails == {"g1@preciselead.in", "o1@preciselead.in"}
+    assert body["provider_counts"] == {"gmail": 1, "outlook": 1}
+
+
 def test_get_inboxes_reports_sheet_error_without_crashing(client, monkeypatch):
+
     from app.services.inbox_sheet_service import InboxSheetError
 
     def boom(*a, **k):
