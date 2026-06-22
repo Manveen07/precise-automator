@@ -239,3 +239,14 @@ def test_get_provider_robustness():
     assert _get_provider({"Provider": "Exchange Server"}) == "outlook"
     assert _get_provider({"Provider": "Custom SMTP"}) == "custom smtp"
 
+
+
+def test_client_match_is_case_insensitive():
+    # Sheet may use "Darlean" while config passes "DARLEAN" — must still match.
+    rows = [
+        _row(Email="a@darlean.com", Client="Darlean", **{"Account ID": "1"}),
+        _row(Email="b@darlean.com", Client="Darlean", **{"Account ID": "2"}),
+    ]
+    res = select_inboxes(rows, client="DARLEAN", needed_daily_volume=5)
+    assert {r["email"] for r in res["free_pool"]} == {"a@darlean.com", "b@darlean.com"}
+    assert res["warnings"] == []

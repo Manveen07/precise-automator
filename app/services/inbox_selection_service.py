@@ -49,8 +49,14 @@ def _neg_date_key(value) -> int:
     return 0
 
 
+def _client_matches(row: dict, client: str) -> bool:
+    # Case-insensitive: the sheet's Client casing (e.g. "Darlean") may differ from the
+    # configured value (e.g. "DARLEAN").
+    return str(row.get("Client", "")).strip().casefold() == str(client).strip().casefold()
+
+
 def _is_eligible(row: dict, client: str) -> bool:
-    if str(row.get("Client", "")).strip() != client:
+    if not _client_matches(row, client):
         return False
     if str(row.get("Availability", "")).strip().upper() != "FREE":
         return False
@@ -140,8 +146,8 @@ def select_inboxes(
     subclient_key: str | None = None,
     provider_mix: dict[str, float] | None = None,
 ) -> dict:
-    client_rows = [row for row in rows if str(row.get("Client", "")).strip() == client]
-    if client == "PRECISE_LEADS":
+    client_rows = [row for row in rows if _client_matches(row, client)]
+    if str(client).strip().upper() == "PRECISE_LEADS":
         client_rows = [row for row in client_rows if _is_subclient_eligible(row, subclient_key)]
     eligible = _dedup_by_account([row for row in client_rows if _is_eligible(row, client)])
     eligible.sort(key=_rank_key)
