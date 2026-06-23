@@ -250,3 +250,25 @@ def test_client_match_is_case_insensitive():
     res = select_inboxes(rows, client="DARLEAN", needed_daily_volume=5)
     assert {r["email"] for r in res["free_pool"]} == {"a@darlean.com", "b@darlean.com"}
     assert res["warnings"] == []
+
+
+def test_warns_sheet_stale_when_all_inboxes_untested():
+    # All inboxes Unknown/blank test status -> the sheet is stale, not genuinely empty.
+    rows = [
+        _row(Email="a@darlean.com", Client="Darlean", Availability="BUSY", **{"Account ID": "1", "Test Status": "Unknown"}),
+        _row(Email="b@darlean.com", Client="Darlean", Availability="BUSY", **{"Account ID": "2", "Test Status": ""}),
+    ]
+    res = select_inboxes(rows, client="DARLEAN", needed_daily_volume=50)
+    assert res["free_pool"] == []
+    assert res["stale"] is True
+    assert any("stale" in w.lower() and "sync" in w.lower() for w in res["warnings"])
+
+
+def test_not_stale_when_some_inboxes_tested():
+    rows = [
+        _row(Email="a@x.com", **{"Account ID": "1", "Test Status": "inbox"}),
+        _row(Email="b@x.com", Availability="BUSY", **{"Account ID": "2", "Test Status": "Unknown"}),
+    ]
+    res = select_inboxes(rows, client="PRECISE_LEADS", needed_daily_volume=5)
+    assert res["stale"] is False
+    assert not any("stale" in w.lower() for w in res["warnings"])

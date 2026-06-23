@@ -85,22 +85,32 @@ def build_smartlead_sequences(plan_sequence: Sequence[dict]) -> list[dict]:
     sequences: list[dict] = []
     for step in plan_sequence:
         seq_number = step["step_number"]
+        variants = step["variants"]
+        # Use a manual percentage split only when every variant has one and they sum to 100;
+        # otherwise fall back to an equal split (the safe default).
+        percentages = [v.get("distribution_percentage") for v in variants]
+        use_percentage = (
+            len(variants) > 1
+            and all(isinstance(p, (int, float)) for p in percentages)
+            and round(sum(percentages)) == 100
+        )
         seq_variants = []
-        for idx, variant in enumerate(step["variants"]):
+        for idx, variant in enumerate(variants):
             label = variant.get("variant_label") or string.ascii_uppercase[idx]
             subject = format_subject_for_smartlead(variant.get("subject", "")) if seq_number == 1 else ""
-            seq_variants.append(
-                {
-                    "subject": subject,
-                    "email_body": format_email_body_for_smartlead(variant["body"]),
-                    "variant_label": label,
-                }
-            )
+            seq_variant = {
+                "subject": subject,
+                "email_body": format_email_body_for_smartlead(variant["body"]),
+                "variant_label": label,
+            }
+            if use_percentage:
+                seq_variant["variant_distribution_percentage"] = int(variant["distribution_percentage"])
+            seq_variants.append(seq_variant)
         sequences.append(
             {
                 "seq_number": seq_number,
                 "seq_delay_details": {"delay_in_days": 0 if seq_number == 1 else step["delay_days"]},
-                "variant_distribution_type": "MANUAL_EQUAL",
+                "variant_distribution_type": "MANUAL_PERCENTAGE" if use_percentage else "MANUAL_EQUAL",
                 "seq_variants": seq_variants,
             }
         )

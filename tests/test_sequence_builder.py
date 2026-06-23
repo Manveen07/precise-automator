@@ -162,3 +162,34 @@ def test_format_email_body_handles_numbered_lists():
     assert "Three steps:<br>1. Sign up" in formatted
     assert "1. Sign up<br>2. Connect inbox" in formatted
     assert "3. Launch campaign<br><br>Done." in formatted
+
+
+def test_build_sequences_uses_manual_percentage_when_distribution_set():
+    plan = [{"step_number": 1, "delay_days": 0, "variants": [
+        {"variant_label": "A", "subject": "S1", "body": "b1", "distribution_percentage": 70},
+        {"variant_label": "B", "subject": "S2", "body": "b2", "distribution_percentage": 30},
+    ]}]
+    seqs = build_smartlead_sequences(plan)
+    assert seqs[0]["variant_distribution_type"] == "MANUAL_PERCENTAGE"
+    pcts = {v["variant_label"]: v["variant_distribution_percentage"] for v in seqs[0]["seq_variants"]}
+    assert pcts == {"A": 70, "B": 30}
+
+
+def test_build_sequences_defaults_to_manual_equal():
+    plan = [{"step_number": 1, "delay_days": 0, "variants": [
+        {"variant_label": "A", "subject": "S1", "body": "b1"},
+        {"variant_label": "B", "subject": "S2", "body": "b2"},
+    ]}]
+    seqs = build_smartlead_sequences(plan)
+    assert seqs[0]["variant_distribution_type"] == "MANUAL_EQUAL"
+    assert "variant_distribution_percentage" not in seqs[0]["seq_variants"][0]
+
+
+def test_build_sequences_ignores_partial_or_invalid_distribution():
+    # Percentages that don't sum to 100 fall back to equal split (safe default).
+    plan = [{"step_number": 1, "delay_days": 0, "variants": [
+        {"variant_label": "A", "subject": "S1", "body": "b1", "distribution_percentage": 70},
+        {"variant_label": "B", "subject": "S2", "body": "b2", "distribution_percentage": 10},
+    ]}]
+    seqs = build_smartlead_sequences(plan)
+    assert seqs[0]["variant_distribution_type"] == "MANUAL_EQUAL"

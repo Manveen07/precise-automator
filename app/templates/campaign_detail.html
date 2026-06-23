@@ -127,12 +127,30 @@
               </div>
               {% endif %}
             </header>
+            {% set n = step.variants | length %}
+            {% set base = 100 // n %}
+            {% set remainder = 100 - base * n %}
             {% for variant in step.variants %}
+            {% set dp = variant.get('distribution_percentage') %}
             <form method="post" action="/api/campaigns/{{ campaign.id }}/sequence-edit"
                   class="variant-panel step-body variant-edit js-single-submit{% if not loop.first %} hidden{% endif %}"
                   data-step="{{ step.step_number }}" data-variant="{{ loop.index0 }}">
               <input type="hidden" name="step_number" value="{{ step.step_number }}">
               <input type="hidden" name="variant_index" value="{{ loop.index0 }}">
+              {% if n > 1 %}
+              <div class="variant-split">
+                <span class="variant-split-text">Sends to</span>
+                <input type="number" class="split-input" min="0" max="100"
+                       value="{{ dp if dp is not none else (base + remainder if loop.first else base) }}"
+                       data-step="{{ step.step_number }}" data-vi="{{ loop.index0 }}"
+                       aria-label="Send percentage for variant {{ variant.variant_label }}">
+                <span class="variant-split-text">% of recipients</span>
+                <span class="split-status" data-step="{{ step.step_number }}"></span>
+                <button type="button" class="button secondary small split-save"
+                        data-step="{{ step.step_number }}"
+                        data-action="/api/campaigns/{{ campaign.id }}/variant-distribution" hidden>Save split</button>
+              </div>
+              {% endif %}
               {% if step.step_number == 1 %}
               <div class="step-subject">
                 <span class="eyebrow">Subject · {{ variant.variant_label }}</span>
@@ -171,10 +189,22 @@
              data-apply-action="/api/campaigns/{{ campaign.id }}/inbox-selection">
       <div class="card-head">
         <h2 class="card-title">Inboxes</h2>
-        <button type="button" class="button secondary small" id="inbox-refresh">Refresh</button>
+        <div class="card-head-actions">
+          <label class="mix-control">Mix
+            <select id="inbox-mix">
+              <option value="0.7">70% Gmail / 30% Outlook</option>
+              <option value="0.5">50 / 50</option>
+              <option value="0.3">30% Gmail / 70% Outlook</option>
+              <option value="1">Gmail only</option>
+              <option value="0">Outlook only</option>
+            </select>
+          </label>
+          <button type="button" class="button secondary small" id="inbox-refresh">Refresh</button>
+        </div>
       </div>
       <p class="card-lead">Recommended sending inboxes for {{ campaign.smartlead_client.label }}, by availability and capacity. Selected inboxes attach to the campaign on sync.</p>
       <form method="post" id="inbox-form" class="js-single-submit">
+        <input type="hidden" name="gmail_ratio" id="inbox-gmail-ratio">
         <div id="inbox-content"><p class="muted">Loading inboxes…</p></div>
         <div class="inbox-apply" id="inbox-actions" hidden>
           <button type="submit">Apply selection</button>
@@ -300,6 +330,44 @@
     });
     bodyEdit.addEventListener("input", () => grow(bodyEdit));
   });
+
+  // Variant send-split: each variant carries its own % (shown with its tab). Panels are
+  // forms, so the split saves via fetch. Save reveals only after a change, enabled at 100%.
+  const _csrf = document.querySelector("meta[name=csrf-token]")?.getAttribute("content") || "";
+  [...new Set([...document.querySelectorAll(".split-input")].map((i) => i.dataset.step))].forEach((step) => {
+    const inputs = [...document.querySelectorAll(`.split-input[data-step="${step}"]`)]
+      .sort((a, b) => (+a.dataset.vi) - (+b.dataset.vi));
+    const statuses = [...document.querySelectorAll(`.split-status[data-step="${step}"]`)];
+    const saves = [...document.querySelectorAll(`.split-save[data-step="${step}"]`)];
+    const baseline = inputs.map((i) => i.value);
+    const sync = () => {
+      const total = inputs.reduce((t, i) => t + Math.max(0, Math.min(100, parseInt(i.value, 10) || 0)), 0);
+      const changed = inputs.some((i, idx) => i.value !== baseline[idx]);
+      const ok = total === 100;
+      statuses.forEach((s) => { s.textContent = changed ? `· total ${total}%` : ""; s.classList.toggle("invalid", changed && !ok); });
+      saves.forEach((b) => { b.hidden = !changed; b.disabled = !ok; });
+    };
+    inputs.forEach((i) => i.addEventListener("input", sync));
+    saves.forEach((btn) => btn.addEventListener("click", async () => {
+      const body = new URLSearchParams();
+      body.append("csrf_token", _csrf);
+      body.append("step_number", step);
+      inputs.forEach((i) => body.append("percentages", String(Math.max(0, Math.min(100, parseInt(i.value, 10) || 0)))));
+      const original = btn.textContent;
+      btn.disabled = true; btn.textContent = "Saving…";
+      try {
+        const res = await fetch(btn.dataset.action, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+          body,
+        });
+        if (res.ok) { window.location.reload(); return; }
+      } catch (_) {}
+      btn.textContent = original; btn.disabled = false;
+      alert("Could not save split — percentages must sum to 100.");
+    }));
+    sync();
+  });
 </script>
 <script>
   (() => {
@@ -309,7 +377,10 @@
     const form = document.getElementById("inbox-form");
     const actions = document.getElementById("inbox-actions");
     const note = document.getElementById("inbox-note");
+    const mixSelect = document.getElementById("inbox-mix");
+    const ratioField = document.getElementById("inbox-gmail-ratio");
     form.action = panel.dataset.applyAction;
+    let currentRatio = null;
 
     const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -361,6 +432,12 @@
         return;
       }
       const needed = data.needed_daily_volume;
+      // Reflect the active gmail/outlook mix in the selector + the hidden field (so Apply saves it).
+      if (data.provider_mix && typeof data.provider_mix.gmail === "number") {
+        const g = data.provider_mix.gmail;
+        ratioField.value = g;
+        if (currentRatio === null) mixSelect.value = String(g);
+      }
       const preselected = (data.selected_account_ids && data.selected_account_ids.length)
         ? new Set(data.selected_account_ids.map(String))
         : new Set((data.recommended || []).map((r) => String(r.account_id)));
@@ -378,6 +455,7 @@
       }
 
       content.innerHTML = `
+        ${data.last_sync ? `<p class="inbox-synced">Inbox data synced · ${esc(data.last_sync)}</p>` : ""}
         <div class="capacity-box">
           <div class="capacity-bar"><div id="inbox-capacity-fill" class="capacity-fill"></div></div>
           <div class="capacity-row">
@@ -398,14 +476,20 @@
     const load = async () => {
       content.innerHTML = '<p class="muted">Loading inboxes…</p>';
       actions.hidden = true;
+      const url = panel.dataset.inboxUrl + (currentRatio !== null ? "?gmail_ratio=" + currentRatio : "");
       try {
-        const res = await fetch(panel.dataset.inboxUrl, { headers: { Accept: "application/json" } });
+        const res = await fetch(url, { headers: { Accept: "application/json" } });
         render(await res.json());
       } catch (e) {
         content.innerHTML = '<div class="notice warning"><p>Could not load inboxes.</p></div>';
       }
     };
 
+    mixSelect.addEventListener("change", () => {
+      currentRatio = mixSelect.value;
+      ratioField.value = currentRatio;
+      load();
+    });
     document.getElementById("inbox-refresh").addEventListener("click", load);
     load();
   })();

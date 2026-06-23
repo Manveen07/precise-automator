@@ -12,10 +12,31 @@ from app.config import settings
 
 _CACHE_TTL_SECONDS = 300
 _cache: dict[str, tuple[float, list[dict]]] = {}
+_last_sync_cache: dict[str, object] = {"ts": 0.0, "value": None}
+_LAST_SYNC_TAB = "Last Sync"
 
 
 class InboxSheetError(RuntimeError):
     """Raised when the inbox sheet cannot be fetched or parsed."""
+
+
+def fetch_last_sync(use_cache: bool = True) -> str | None:
+    """Timestamp from the sheet's 'Last Sync' tab, or None. Never raises — purely informational."""
+    url = settings.INBOX_SHEET_WEBAPP_URL
+    if not url:
+        return None
+    if use_cache and _last_sync_cache["ts"] and (time.monotonic() - float(_last_sync_cache["ts"])) < _CACHE_TTL_SECONDS:
+        return _last_sync_cache["value"]  # type: ignore[return-value]
+    try:
+        response = httpx.get(url, params={"sheet": _LAST_SYNC_TAB, "action": "read"}, timeout=20.0, follow_redirects=True)
+        response.raise_for_status()
+        grid = response.json()
+        value = grid[0][1] if grid and len(grid[0]) > 1 else None
+    except (httpx.HTTPError, ValueError, IndexError, KeyError, TypeError):
+        return None
+    _last_sync_cache["ts"] = time.monotonic()
+    _last_sync_cache["value"] = value
+    return value
 
 
 def rows_from_grid(grid: list[list]) -> list[dict]:

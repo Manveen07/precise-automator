@@ -219,9 +219,20 @@ def select_inboxes(
         reason = str(row.get("Busy Reason", "")).strip() or "other"
         busy.setdefault(reason, []).append(_row_view(row))
 
+    # Staleness: every inbox for this client has no deliverability test result. That points
+    # to a stale sheet (sync hasn't written results), not a genuine inbox shortage.
+    stale = bool(client_rows) and all(
+        str(row.get("Test Status", "")).strip().lower() in ("", "unknown") for row in client_rows
+    )
+
     warnings: list[str] = []
     label = f"sub-client '{subclient_key}'" if subclient_key else f"client '{client}'"
-    if not eligible:
+    if stale:
+        warnings.append(
+            f"Inbox sheet looks stale for {label}: all {len(client_rows)} inboxes show no "
+            f"deliverability test result. Re-run the Smartlead sync."
+        )
+    elif not eligible:
         warnings.append(
             f"No eligible FREE inboxes for {label}. Check the inbox sheet or domain mapping, "
             f"or free up busy inboxes."
@@ -246,5 +257,6 @@ def select_inboxes(
             "outlook": sum(1 for row in picked if _get_provider(row) == "outlook"),
         },
         "shortfall": total_capacity < needed_daily_volume,
+        "stale": stale,
         "eligible_count": len(eligible),
     }

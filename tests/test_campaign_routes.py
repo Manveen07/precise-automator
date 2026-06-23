@@ -1065,3 +1065,99 @@ def test_edit_sequence_variant_rejects_unknown_step(client):
         data={"step_number": "9", "variant_index": "0", "body": "x"},
     )
     assert response.status_code == 404
+
+
+def test_get_inboxes_respects_gmail_ratio_override(client, monkeypatch):
+    rows = [
+        _inbox_row(Email="g1@preciselead.in", Provider="Gmail", **{"Account ID": "1", "Avail. Capacity": 50}),
+        _inbox_row(Email="g2@preciselead.in", Provider="Gmail", **{"Account ID": "2", "Avail. Capacity": 50}),
+        _inbox_row(Email="o1@preciselead.in", Provider="Outlook", **{"Account ID": "3", "Avail. Capacity": 50}),
+    ]
+    monkeypatch.setattr(campaigns, "fetch_inbox_rows", lambda *a, **k: rows)
+    doc = _inbox_campaign()
+    cid = str(doc["_id"])
+
+    gmail_only = client.get(f"/api/campaigns/{cid}/inboxes?gmail_ratio=1.0").json()
+    assert gmail_only["recommended"]
+    assert gmail_only["provider_counts"]["outlook"] == 0
+    assert gmail_only["provider_mix"] == {"gmail": 1.0, "outlook": 0.0}
+
+    outlook_only = client.get(f"/api/campaigns/{cid}/inboxes?gmail_ratio=0.0").json()
+    assert outlook_only["recommended"]
+    assert outlook_only["provider_counts"]["gmail"] == 0
+
+
+def test_post_inbox_selection_persists_provider_mix(client, monkeypatch):
+    rows = [_inbox_row(Email="a@preciselead.in", **{"Account ID": "1001"})]
+    monkeypatch.setattr(campaigns, "fetch_inbox_rows", lambda *a, **k: rows)
+    doc = _inbox_campaign()
+    cid = str(doc["_id"])
+
+    response = client.post(
+        f"/api/campaigns/{cid}/inbox-selection",
+        data={"account_ids": ["1001"], "gmail_ratio": "0.5"},
+    )
+    assert response.status_code == 200
+    selection = store.get_campaign(cid)["current_plan"]["inbox_selection"]
+    assert selection["provider_mix"] == {"gmail": 0.5, "outlook": 0.5}
+
+
+def test_campaign_detail_renders_provider_mix_selector(client):
+    doc = _inbox_campaign()
+    response = client.get(f"/campaigns/{doc['_id']}")
+    assert response.status_code == 200
+    assert 'id="inbox-mix"' in response.text
+    assert 'name="gmail_ratio"' in response.text
+
+
+def _two_variant_campaign():
+    return store.insert_campaign(
+        workspace_key="preciselead",
+        campaign_name="Dist Test",
+        raw_input={"workspace_key": "preciselead", "campaign_name": "Dist Test", "parsed_messaging": {}},
+        plan={
+            "workspace_key": "preciselead",
+            "campaign_name": "Dist Test",
+            "template_family": "cold_email_standard_v1",
+            "schedule": {}, "settings": {},
+            "inbox_selection": {"mode": "skip", "email_account_ids": []},
+            "sequence": [{"step_number": 1, "delay_days": 0, "variants": [
+                {"variant_label": "A", "subject": "S1", "body": "b1"},
+                {"variant_label": "B", "subject": "S2", "body": "b2"},
+            ]}],
+            "approval_required": True, "notes_for_operator": [],
+        },
+        validation_errors=[],
+    )
+
+
+def test_variant_distribution_persists_percentages(client):
+    doc = _two_variant_campaign()
+    cid = str(doc["_id"])
+    response = client.post(
+        f"/api/campaigns/{cid}/variant-distribution",
+        data={"step_number": "1", "percentages": ["70", "30"]},
+    )
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    variants = store.get_campaign(cid)["current_plan"]["sequence"][0]["variants"]
+    assert variants[0]["distribution_percentage"] == 70
+    assert variants[1]["distribution_percentage"] == 30
+
+
+def test_variant_distribution_rejects_non_100_sum(client):
+    doc = _two_variant_campaign()
+    response = client.post(
+        f"/api/campaigns/{doc['_id']}/variant-distribution",
+        data={"step_number": "1", "percentages": ["70", "20"]},
+    )
+    assert response.status_code == 400
+
+
+def test_variant_distribution_rejects_count_mismatch(client):
+    doc = _two_variant_campaign()
+    response = client.post(
+        f"/api/campaigns/{doc['_id']}/variant-distribution",
+        data={"step_number": "1", "percentages": ["100"]},
+    )
+    assert response.status_code == 400

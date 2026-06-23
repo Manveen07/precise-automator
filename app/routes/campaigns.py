@@ -34,7 +34,7 @@ from app.config import (
 )
 from app.services.anthropic_service import AnthropicCampaignService
 from app.services.inbox_selection_service import select_inboxes
-from app.services.inbox_sheet_service import InboxSheetError, fetch_inbox_rows
+from app.services.inbox_sheet_service import InboxSheetError, fetch_inbox_rows, fetch_last_sync
 from app.services.local_plan_service import build_campaign_plan_from_input
 from app.services.parser_service import parse_messaging_file
 from app.services.sequence_builder import smartlead_html_to_text
@@ -344,6 +344,35 @@ def edit_sequence_variant(
     return _redirect_to_detail(request, campaign_id, {"ok": True, "errors": errors})
 
 
+@router.post("/api/campaigns/{campaign_id}/variant-distribution")
+def update_variant_distribution(
+    campaign_id: str,
+    request: Request,
+    step_number: int = Form(...),
+    percentages: list[int] = Form(...),
+):
+    doc = _require_campaign(campaign_id)
+    plan = doc.get("current_plan") or {}
+    if not plan.get("sequence"):
+        raise HTTPException(status_code=400, detail="No local campaign plan to edit.")
+
+    step = next((s for s in plan["sequence"] if int(s.get("step_number", 0)) == step_number), None)
+    if step is None:
+        raise HTTPException(status_code=404, detail=f"Email {step_number} was not found in this plan.")
+    variants = step.get("variants") or []
+    if len(percentages) != len(variants):
+        raise HTTPException(status_code=400, detail="One percentage per variant is required.")
+    if any(p < 0 for p in percentages) or sum(percentages) != 100:
+        raise HTTPException(status_code=400, detail="Variant percentages must be non-negative and sum to 100.")
+
+    for variant, percentage in zip(variants, percentages):
+        variant["distribution_percentage"] = int(percentage)
+
+    errors = validate_campaign_plan(plan, _active_workspace_keys())
+    store.update_plan(campaign_id, plan, errors)
+    return _redirect_to_detail(request, campaign_id, {"ok": True, "errors": errors})
+
+
 # ----- Inbox selection ----- #
 
 
@@ -361,8 +390,13 @@ def _campaign_subclient_key(doc: dict, plan: dict) -> str | None:
     return None
 
 
+def _provider_mix_from_ratio(gmail_ratio: float) -> dict[str, float]:
+    g = max(0.0, min(1.0, gmail_ratio))
+    return {"gmail": round(g, 4), "outlook": round(1.0 - g, 4)}
+
+
 @router.get("/api/campaigns/{campaign_id}/inboxes")
-def recommend_campaign_inboxes(campaign_id: str) -> dict:
+def recommend_campaign_inboxes(campaign_id: str, gmail_ratio: float | None = Query(None)) -> dict:
     doc = _require_campaign(campaign_id)
     plan = doc.get("current_plan") or {}
     client = _campaign_sheet_client(doc, plan)
@@ -377,7 +411,11 @@ def recommend_campaign_inboxes(campaign_id: str) -> dict:
         return {"ok": False, "error": str(exc)}
 
     subclient_key = _campaign_subclient_key(doc, plan)
-    provider_mix = (plan.get("inbox_selection") or {}).get("provider_mix")
+    # The operator can override the gmail/outlook split per request; otherwise use the plan's.
+    if gmail_ratio is not None:
+        provider_mix = _provider_mix_from_ratio(gmail_ratio)
+    else:
+        provider_mix = (plan.get("inbox_selection") or {}).get("provider_mix")
     result = select_inboxes(
         rows,
         client=client,
@@ -386,6 +424,8 @@ def recommend_campaign_inboxes(campaign_id: str) -> dict:
         provider_mix=provider_mix,
     )
     result["ok"] = True
+    result["provider_mix"] = provider_mix or {"gmail": 0.7, "outlook": 0.3}
+    result["last_sync"] = fetch_last_sync()
     result["selected_account_ids"] = (plan.get("inbox_selection") or {}).get("email_account_ids") or []
     return result
 
@@ -395,6 +435,7 @@ def update_inbox_selection(
     campaign_id: str,
     request: Request,
     account_ids: list[int] = Form(default=[]),
+    gmail_ratio: float | None = Form(None),
 ):
     doc = _require_campaign(campaign_id)
     plan = doc.get("current_plan") or {}
@@ -418,6 +459,8 @@ def update_inbox_selection(
     selection = plan.get("inbox_selection") or {}
     selection["mode"] = "manual_ids" if account_ids else "skip"
     selection["email_account_ids"] = account_ids
+    if gmail_ratio is not None:
+        selection["provider_mix"] = _provider_mix_from_ratio(gmail_ratio)
     plan["inbox_selection"] = selection
 
     errors = validate_campaign_plan(plan, _active_workspace_keys())

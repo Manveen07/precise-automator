@@ -55,3 +55,32 @@ def test_fetch_inbox_rows_wraps_transport_errors(monkeypatch):
     monkeypatch.setattr(inbox_sheet_service.httpx, "get", boom)
     with pytest.raises(InboxSheetError):
         inbox_sheet_service.fetch_inbox_rows(use_cache=False)
+
+
+def test_fetch_last_sync_returns_timestamp(monkeypatch):
+    monkeypatch.setattr(inbox_sheet_service.settings, "INBOX_SHEET_WEBAPP_URL", "https://script/exec")
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return [["Last Synced", "2026-06-23 05:06:09"]]
+
+    monkeypatch.setattr(inbox_sheet_service.httpx, "get", lambda url, params=None, timeout=None, follow_redirects=None: FakeResponse())
+    assert inbox_sheet_service.fetch_last_sync(use_cache=False) == "2026-06-23 05:06:09"
+
+
+def test_fetch_last_sync_returns_none_on_error(monkeypatch):
+    monkeypatch.setattr(inbox_sheet_service.settings, "INBOX_SHEET_WEBAPP_URL", "https://script/exec")
+
+    def boom(url, params=None, timeout=None, follow_redirects=None):
+        raise inbox_sheet_service.httpx.HTTPError("down")
+
+    monkeypatch.setattr(inbox_sheet_service.httpx, "get", boom)
+    assert inbox_sheet_service.fetch_last_sync(use_cache=False) is None
+
+
+def test_fetch_last_sync_none_when_unconfigured(monkeypatch):
+    monkeypatch.setattr(inbox_sheet_service.settings, "INBOX_SHEET_WEBAPP_URL", "")
+    assert inbox_sheet_service.fetch_last_sync(use_cache=False) is None
