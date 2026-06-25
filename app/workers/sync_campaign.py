@@ -28,6 +28,7 @@ from app.services.sequence_builder import (
     format_subject_for_smartlead,
     smartlead_html_to_text,
 )
+from app.services.twain_service import audit_twain_field
 from app.services.smartlead_service import SmartleadService
 from app.services.validation_service import validate_campaign_plan
 from app import store
@@ -101,6 +102,10 @@ async def _sync_campaign_async(campaign_id: str) -> None:
         await smartlead.update_sequences(smartlead_id, sequences)
         await _verify_smartlead_sequence_sync(smartlead, smartlead_id, plan["sequence"])
 
+        if doc.get("is_twin"):
+            verify_response = await smartlead.get_sequences(smartlead_id)
+            _assert_twin_join_intact(_smartlead_sequence_list(verify_response))
+
         email_account_ids = plan.get("inbox_selection", {}).get("email_account_ids") or []
         if email_account_ids:
             await smartlead.attach_email_accounts(smartlead_id, email_account_ids)
@@ -114,6 +119,22 @@ def _active_workspace_keys() -> set[str]:
     from app.config import SMARTLEAD_WORKSPACES
 
     return {w["key"] for w in SMARTLEAD_WORKSPACES}
+
+
+def _assert_twin_join_intact(smartlead_sequences: list[dict]) -> None:
+    """Hard-fail if a twin Step 1 body has reverted to a lone <br> join.
+
+    Soft logging is insufficient — this join has silently reverted before and
+    was only caught by a screenshot.
+    """
+    for step in smartlead_sequences:
+        if int(step.get("seq_number") or step.get("step_number") or 0) != 1:
+            continue
+        variants = step.get("seq_variants") or step.get("sequence_variants") or [step]
+        for variant in variants:
+            body = variant.get("email_body") or step.get("email_body") or ""
+            if "lone_br" in audit_twain_field(body):
+                raise RuntimeError("Twin Step 1 join reverted to a lone <br> after sync (expected <br><br>)")
 
 
 async def _verify_smartlead_sequence_sync(

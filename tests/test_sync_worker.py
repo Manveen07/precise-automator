@@ -2,6 +2,7 @@ import httpx
 import pytest
 
 from app.config import infer_smartlead_client
+from app.workers import sync_campaign
 from app.workers.sync_campaign import (
     _error_text,
     _extract_campaign_id,
@@ -139,3 +140,20 @@ def test_resolve_client_id_returns_none_when_campaign_has_no_client_match():
 def test_resolve_client_id_rejects_invalid_stored_client_id():
     with pytest.raises(RuntimeError, match="stored Smartlead client.*invalid id"):
         _resolve_client_id({"smartlead_client_id": "not-a-number"}, {"key": "preciselead"})
+
+
+def test_assert_twin_join_intact_raises_on_lone_br():
+    reverted = [
+        {"seq_number": 1, "seq_variants": [{"variant_label": "A",
+            "email_body": "Hi {{first_name}},<br>{{Step 1}}<br><br>%signature%"}]},
+    ]
+    with pytest.raises(RuntimeError):
+        sync_campaign._assert_twin_join_intact(reverted)
+
+
+def test_assert_twin_join_intact_passes_on_double_br():
+    good = [
+        {"seq_number": 1, "seq_variants": [{"variant_label": "A",
+            "email_body": "Hi {{first_name}},<br><br>{{Step 1}}<br><br>%signature%"}]},
+    ]
+    sync_campaign._assert_twin_join_intact(good)  # no raise
