@@ -1191,3 +1191,24 @@ def test_mark_as_twin_persists_flag_and_url(client):
     doc = store.get_campaign(cid)
     assert doc["is_twin"] is True
     assert "777" in doc["twin_smartlead_url"]
+
+
+def test_twin_fix_rejected_for_non_twin(client):
+    resp = client.post("/api/campaigns/new", data={"workspace_key": "darlean", "campaign_name": "Plain"})
+    cid = resp.headers["location"].rsplit("/", 1)[-1]
+    r = client.post(f"/api/campaigns/{cid}/twin-fix", data={})
+    assert r.status_code == 400
+
+
+def test_twin_fix_schedules_background_task(client, monkeypatch):
+    import app.routes.campaigns as routes
+    calls = {}
+    monkeypatch.setattr(routes, "run_twin_fix_now", lambda cid, url=None: calls.setdefault("args", (cid, url)))
+    resp = client.post(
+        "/api/campaigns/new",
+        data={"workspace_key": "darlean", "campaign_name": "Events - Twain", "is_twin": "true"},
+    )
+    cid = resp.headers["location"].rsplit("/", 1)[-1]
+    r = client.post(f"/api/campaigns/{cid}/twin-fix", data={"twin_smartlead_url": ""})
+    assert r.status_code in (200, 303)
+    assert calls["args"][0] == cid

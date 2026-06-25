@@ -44,6 +44,7 @@ from app.services.spintax_service import apply_spintax_to_plan, count_bodies_nee
 from app.services.validation_service import validate_campaign_plan
 from app import store
 from app.workers.sync_campaign import sync_campaign_now
+from app.workers.twin_fix import run_twin_fix_now
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -528,6 +529,21 @@ def mark_twin(
         raise HTTPException(status_code=400, detail="Paste a valid Smartlead campaign URL or numeric ID")
     store.set_twin(campaign_id, is_twin, url)
     return _redirect_to_detail(request, campaign_id, {"ok": True, "is_twin": is_twin})
+
+
+@router.post("/api/campaigns/{campaign_id}/twin-fix")
+def twin_fix(
+    campaign_id: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    twin_smartlead_url: str = Form(""),
+) -> dict:
+    doc = _require_campaign(campaign_id)
+    if not doc.get("is_twin"):
+        raise HTTPException(status_code=400, detail="Not a twin campaign. Mark it as twin first.")
+    url = twin_smartlead_url.strip() or None
+    background_tasks.add_task(run_twin_fix_now, campaign_id, url)
+    return _redirect_to_detail(request, campaign_id, {"ok": True, "queued": True})
 
 
 @router.post("/api/campaigns/{campaign_id}/local-delete")
