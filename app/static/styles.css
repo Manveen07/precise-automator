@@ -1370,6 +1370,7 @@ summary:hover { color: var(--accent); }
   transition: border-color 0.12s ease, background 0.12s ease;
 }
 .dropzone:hover { border-color: var(--accent); background: #fdf8f4; }
+.dropzone.dragover { border-color: var(--accent); background: var(--accent-soft); border-style: solid; }
 .dropzone-icon {
   width: 42px;
   height: 42px;

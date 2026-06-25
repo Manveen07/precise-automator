@@ -26,6 +26,26 @@ fileInput?.addEventListener("change", async () => {
   }
 });
 
+// Drag-and-drop onto the dropzone. The file input is hidden, so we capture the
+// drop on the label, assign the file to the input (via DataTransfer), and reuse
+// the existing change handler to load the text + campaign name.
+const dropzone = document.querySelector(".dropzone");
+if (dropzone && fileInput) {
+  const stop = (e) => { e.preventDefault(); e.stopPropagation(); };
+  ["dragenter", "dragover"].forEach((ev) =>
+    dropzone.addEventListener(ev, (e) => { stop(e); dropzone.classList.add("dragover"); }));
+  ["dragleave", "dragend", "drop"].forEach((ev) =>
+    dropzone.addEventListener(ev, (e) => { stop(e); dropzone.classList.remove("dragover"); }));
+  dropzone.addEventListener("drop", (e) => {
+    const file = e.dataTransfer?.files?.[0];
+    if (!file) return;
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    fileInput.files = dt.files;
+    fileInput.dispatchEvent(new Event("change"));
+  });
+}
+
 // Messaging input mode toggle (Upload file <-> Paste text).
 // Both inputs stay in the DOM so the form submits the same fields as before.
 document.querySelectorAll(".seg-btn").forEach((btn) => {
