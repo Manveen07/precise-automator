@@ -1215,3 +1215,20 @@ def test_twin_fix_schedules_background_task(client, monkeypatch):
     # The route flags the campaign as running so the UI can show progress.
     status = client.get(f"/api/campaigns/{cid}/status").json()
     assert status["twin_fix_running"] is True
+
+
+def test_detail_renders_when_raw_input_missing_parsed_messaging(client):
+    """A twin campaign with an empty raw_input must still render (no 500)."""
+    plan = {
+        "sequence": [{"step_number": 1, "delay_days": 0,
+                      "variants": [{"variant_label": "A", "subject": "{{Subject 1}}", "body": "x"}]}],
+        "schedule": {"max_new_leads_per_day": 100, "start_hour": "09:00",
+                     "end_hour": "18:00", "timezone": "America/New_York"},
+    }
+    doc = store.insert_campaign(
+        workspace_key="darlean", campaign_name="T", raw_input={}, plan=plan,
+        validation_errors=[], is_twin=True, smartlead_campaign_id=999,
+    )
+    r = client.get(f"/campaigns/{str(doc['_id'])}")
+    assert r.status_code == 200
+    assert ">Twain<" in r.text

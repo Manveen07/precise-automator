@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% block title %}{{ campaign.campaign_name }} - Precise Automator{% endblock %}
 {% block content %}
+{% set _raw = campaign.raw_input or {} %}
+{% set _pm = _raw.get('parsed_messaging') or {} %}
 <a class="back-link" href="/app"><span aria-hidden="true">&#8592;</span> Back to campaigns</a>
 
 <div class="detail-header">
@@ -9,7 +11,7 @@
     <div class="detail-subline">
       <span class="badge status-{{ campaign.status }}">{{ campaign.status_label }}</span>
       {% if campaign.is_twin %}<span class="badge status-synced">Twain</span>{% endif %}
-      <span class="muted">Workspace {{ campaign.workspace_name }}{% if campaign.raw_input.parsed_messaging.selected_campaign %} · {{ campaign.raw_input.parsed_messaging.selected_campaign }}{% endif %}</span>
+      <span class="muted">Workspace {{ campaign.workspace_name }}{% if _pm.get('selected_campaign') %} · {{ _pm.get('selected_campaign') }}{% endif %}</span>
     </div>
   </div>
   <div class="detail-actions">
@@ -240,18 +242,18 @@
       </form>
     </section>
 
-    {% if campaign.raw_input.messaging_text %}
+    {% if _raw.get('messaging_text') %}
     <section class="detail-card">
       <h2 class="card-title">Parsed messaging</h2>
-      {% if campaign.raw_input.parsed_messaging.warnings %}
+      {% if _pm.get('warnings') %}
       <div class="notice warning">
         <strong>Parser warnings — check your source file:</strong>
-        {% for w in campaign.raw_input.parsed_messaging.warnings %}<p>{{ w }}</p>{% endfor %}
+        {% for w in _pm.get('warnings') %}<p>{{ w }}</p>{% endfor %}
       </div>
       {% endif %}
       <details class="clean-details">
         <summary>View parser output</summary>
-        <pre>{{ campaign.raw_input.parsed_messaging | tojson(indent=2) }}</pre>
+        <pre>{{ _pm | tojson(indent=2) }}</pre>
       </details>
     </section>
     {% endif %}
