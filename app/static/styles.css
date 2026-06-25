@@ -1808,10 +1808,11 @@ textarea.body-input:focus { outline: none; border-color: var(--accent); box-shad
   .inbox-row .num { text-align: left; }
 }
 
-/* Twin / Twain panel */
-.twin-panel .twin-fix-form { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+/* Twain panel */
+.twin-panel .twin-fix-form { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; margin-top: 0.75rem; }
 .twin-panel .twin-fix-form .input { flex: 1 1 320px; }
-.twin-fix-summary { margin-top: 0.75rem; font-size: 0.9rem; }
+.twin-panel .twin-fix-form .button { flex: 0 0 auto; }
+.twin-fix-summary { margin-top: 1rem; font-size: 0.9rem; }
 .twin-fix-summary p { margin: 0.15rem 0; }
 .twin-fix-running {
   display: flex; align-items: center; gap: 0.6rem;

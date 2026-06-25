@@ -8,7 +8,7 @@
     <h1>{{ campaign.campaign_name }}</h1>
     <div class="detail-subline">
       <span class="badge status-{{ campaign.status }}">{{ campaign.status_label }}</span>
-      {% if campaign.is_twin %}<span class="badge status-synced">Twin</span>{% endif %}
+      {% if campaign.is_twin %}<span class="badge status-synced">Twain</span>{% endif %}
       <span class="muted">Workspace {{ campaign.workspace_name }}{% if campaign.raw_input.parsed_messaging.selected_campaign %} · {{ campaign.raw_input.parsed_messaging.selected_campaign }}{% endif %}</span>
     </div>
   </div>
@@ -47,8 +47,8 @@
 
 {% if campaign.is_twin %}
 <section class="detail-card twin-panel">
-  <div class="card-head"><h2 class="card-title">Twin / Twain</h2></div>
-  <p class="card-lead">Twin campaign — bodies are Twain-personalized per-lead fields. Run the fix after leads are pushed.</p>
+  <div class="card-head"><h2 class="card-title">Twain</h2></div>
+  <p class="card-lead">Twain campaign — bodies are Twain-personalized per-lead fields. Run the fix after leads are pushed.</p>
   {% if campaign.twin_fix_running %}
   <div class="twin-fix-running" role="status">
     <span class="twin-spinner" aria-hidden="true"></span>
@@ -289,12 +289,12 @@
 
     {% if not campaign.is_twin and campaign.smartlead_campaign_id %}
     <section class="detail-card sidebar-card">
-      <h3 class="sidebar-title">Twin / Twain</h3>
+      <h3 class="sidebar-title">Twain</h3>
       <p class="card-lead">Mark as a Twain-personalized campaign to enable the spacing fix.</p>
       <form method="post" action="/api/campaigns/{{ campaign.id }}/twin" class="js-single-submit">
         <input type="hidden" name="is_twin" value="true">
         <input class="input" name="twin_smartlead_url" placeholder="Smartlead URL (optional)">
-        <button type="submit" class="button secondary full-width">Mark as twin</button>
+        <button type="submit" class="button secondary full-width">Mark as Twain</button>
       </form>
     </section>
     {% endif %}
