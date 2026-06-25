@@ -161,6 +161,23 @@ class SmartleadService:
     async def get_sequences(self, campaign_id: int) -> dict:
         return await self.get(f"campaigns/{campaign_id}/sequences")
 
+    async def get_leads(self, campaign_id: int, limit: int = 100, offset: int = 0) -> dict:
+        return await self.get(f"campaigns/{campaign_id}/leads", {"limit": limit, "offset": offset})
+
+    async def update_lead(self, campaign_id: int, lead_id: int, email: str, custom_fields: dict) -> dict:
+        """Update a single lead's fields via the per-lead endpoint.
+
+        `email` is REQUIRED in the body even though `lead_id` is in the URL —
+        omitting it returns HTTP 400 `"email" is required`. Do not "clean up"
+        the redundant-looking email field. The bulk add_leads upsert silently
+        skips custom-field overwrites on existing leads, so this per-lead
+        endpoint is mandatory for fixes.
+        """
+        return await self.post(
+            f"campaigns/{campaign_id}/leads/{lead_id}",
+            {"email": email, "custom_fields": custom_fields},
+        )
+
     async def get_campaign_analytics(self, campaign_id: int) -> dict:
         return await self.get(f"campaigns/{campaign_id}/analytics")
 
