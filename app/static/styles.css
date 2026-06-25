@@ -1826,3 +1826,43 @@ textarea.body-input:focus { outline: none; border-color: var(--accent); box-shad
   border-radius: 50%; animation: twin-spin 0.8s linear infinite;
 }
 @keyframes twin-spin { to { transform: rotate(360deg); } }
+
+/* Checkboxes must not inherit the full-width text-input styling. */
+input[type="checkbox"],
+input[type="radio"] {
+  width: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  accent-color: var(--accent);
+}
+.checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  cursor: pointer;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.checkbox-row:hover { border-color: var(--border-strong); }
+.checkbox-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  margin-top: 1px;
+  cursor: pointer;
+}
+.checkbox-row:has(input[type="checkbox"]:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--ink);
+}
