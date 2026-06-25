@@ -92,6 +92,7 @@ def campaign_status(campaign_id: str) -> dict:
         "status_label": _status_label(doc.get("status", "drafting")),
         "smartlead_campaign_id": doc.get("smartlead_campaign_id"),
         "last_sync_error": doc.get("last_sync_error"),
+        "twin_fix_running": doc.get("twin_fix_running", False),
         "updated_at": store.to_display_tz(doc.get("updated_at")).isoformat() if doc.get("updated_at") else None,
     }
 
@@ -542,6 +543,7 @@ def twin_fix(
     if not doc.get("is_twin"):
         raise HTTPException(status_code=400, detail="Not a twin campaign. Mark it as twin first.")
     url = twin_smartlead_url.strip() or None
+    store.set_twin_fix_running(campaign_id, True)
     background_tasks.add_task(run_twin_fix_now, campaign_id, url)
     return _redirect_to_detail(request, campaign_id, {"ok": True, "queued": True})
 
@@ -882,6 +884,7 @@ def _detail_payload(doc: dict) -> dict:
         "is_twin": doc.get("is_twin", False),
         "twin_smartlead_url": doc.get("twin_smartlead_url"),
         "twin_last_fix": doc.get("twin_last_fix"),
+        "twin_fix_running": doc.get("twin_fix_running", False),
         "last_sync_error": doc.get("last_sync_error"),
         "spintax_status": spintax_status,
         "synced_at": store.to_display_tz(doc.get("synced_at")),

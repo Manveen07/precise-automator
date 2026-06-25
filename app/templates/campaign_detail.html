@@ -45,30 +45,31 @@
 </div>
 {% endif %}
 
-<section class="detail-card">
+{% if campaign.is_twin %}
+<section class="detail-card twin-panel">
   <div class="card-head"><h2 class="card-title">Twin / Twain</h2></div>
-  {% if campaign.is_twin %}
-  <p class="card-lead">Twin campaign — bodies are Twain-personalized per-lead fields.</p>
+  <p class="card-lead">Twin campaign — bodies are Twain-personalized per-lead fields. Run the fix after leads are pushed.</p>
+  {% if campaign.twin_fix_running %}
+  <div class="twin-fix-running" role="status">
+    <span class="twin-spinner" aria-hidden="true"></span>
+    <span>Fixing spacing in the background… large campaigns take a few minutes. Keep this page open — it refreshes when done.</span>
+  </div>
+  {% else %}
   <form method="post" action="/api/campaigns/{{ campaign.id }}/twin-fix" class="js-single-submit twin-fix-form">
     <input class="input" name="twin_smartlead_url" placeholder="Smartlead campaign URL (optional — overrides the linked id)" value="{{ campaign.twin_smartlead_url or '' }}">
     <button type="submit" class="button">Fix Twain spacing</button>
   </form>
+  {% endif %}
   {% if campaign.twin_last_fix %}
   <div class="twin-fix-summary">
-    <p>Last fix: {{ campaign.twin_last_fix.leads_changed }} of {{ campaign.twin_last_fix.total_leads }} leads changed.</p>
+    <p>Last fix: <strong>{{ campaign.twin_last_fix.leads_changed }}</strong> of {{ campaign.twin_last_fix.total_leads }} leads changed.</p>
     {% if campaign.twin_last_fix.template_repushed %}<p>Template join repaired and repushed.</p>{% endif %}
     {% if campaign.twin_last_fix.greeting_flags %}<p>Greeting flags: {{ campaign.twin_last_fix.greeting_flags | length }}.</p>{% endif %}
     {% if campaign.twin_last_fix.errors %}<p class="muted">Errors: {{ campaign.twin_last_fix.errors | length }}.</p>{% endif %}
   </div>
   {% endif %}
-  {% else %}
-  <form method="post" action="/api/campaigns/{{ campaign.id }}/twin" class="js-single-submit">
-    <input type="hidden" name="is_twin" value="true">
-    <input class="input" name="twin_smartlead_url" placeholder="Smartlead campaign URL (optional)">
-    <button type="submit" class="button secondary">Mark as twin</button>
-  </form>
-  {% endif %}
 </section>
+{% endif %}
 
 <div class="detail-grid">
   <div class="detail-main">
@@ -283,6 +284,18 @@
         <a class="button secondary" href="/api/campaigns/{{ campaign.id }}/smartlead">Inspect</a>
         <a class="button secondary" href="/api/campaigns/{{ campaign.id }}/analytics">Analytics</a>
       </div>
+    </section>
+    {% endif %}
+
+    {% if not campaign.is_twin and campaign.smartlead_campaign_id %}
+    <section class="detail-card sidebar-card">
+      <h3 class="sidebar-title">Twin / Twain</h3>
+      <p class="card-lead">Mark as a Twain-personalized campaign to enable the spacing fix.</p>
+      <form method="post" action="/api/campaigns/{{ campaign.id }}/twin" class="js-single-submit">
+        <input type="hidden" name="is_twin" value="true">
+        <input class="input" name="twin_smartlead_url" placeholder="Smartlead URL (optional)">
+        <button type="submit" class="button secondary full-width">Mark as twin</button>
+      </form>
     </section>
     {% endif %}
 
@@ -542,6 +555,28 @@
       if (attempts < 60) window.setTimeout(poll, 3000);
     };
     window.setTimeout(poll, 1500);
+  })();
+</script>
+{% endif %}
+{% if campaign.is_twin and campaign.twin_fix_running %}
+<script>
+  (() => {
+    const statusUrl = "/api/campaigns/{{ campaign.id }}/status";
+    let attempts = 0;
+    const poll = async () => {
+      attempts += 1;
+      try {
+        const response = await fetch(statusUrl, { headers: { Accept: "application/json" } });
+        if (response.ok) {
+          const payload = await response.json();
+          if (!payload.twin_fix_running) { window.location.reload(); return; }
+        }
+      } catch (_) {
+        // transient failure — keep polling
+      }
+      if (attempts < 200) window.setTimeout(poll, 3000);  // ~10 min cap
+    };
+    window.setTimeout(poll, 2000);
   })();
 </script>
 {% endif %}

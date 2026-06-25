@@ -1212,3 +1212,6 @@ def test_twin_fix_schedules_background_task(client, monkeypatch):
     r = client.post(f"/api/campaigns/{cid}/twin-fix", data={"twin_smartlead_url": ""})
     assert r.status_code in (200, 303)
     assert calls["args"][0] == cid
+    # The route flags the campaign as running so the UI can show progress.
+    status = client.get(f"/api/campaigns/{cid}/status").json()
+    assert status["twin_fix_running"] is True

@@ -105,6 +105,7 @@ def insert_campaign(
         "is_twin": is_twin,
         "twin_smartlead_url": twin_smartlead_url,
         "twin_last_fix": None,
+        "twin_fix_running": False,
         "created_at": now,
         "updated_at": now,
     }
@@ -192,7 +193,18 @@ def save_twin_fix(campaign_id: str, summary: dict) -> dict | None:
         return None
     return campaigns_collection().find_one_and_update(
         {"_id": oid},
-        {"$set": {"twin_last_fix": summary, "updated_at": now_utc()}},
+        {"$set": {"twin_last_fix": summary, "twin_fix_running": False, "updated_at": now_utc()}},
+        return_document=True,
+    )
+
+
+def set_twin_fix_running(campaign_id: str, running: bool) -> dict | None:
+    oid = to_object_id(campaign_id)
+    if not oid:
+        return None
+    return campaigns_collection().find_one_and_update(
+        {"_id": oid},
+        {"$set": {"twin_fix_running": running, "updated_at": now_utc()}},
         return_document=True,
     )
 

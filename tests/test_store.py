@@ -72,3 +72,17 @@ def test_save_twin_fix_persists_summary():
     summary = {"total_leads": 10, "leads_changed": 3, "errors": []}
     updated = store.save_twin_fix(cid, summary)
     assert updated["twin_last_fix"]["leads_changed"] == 3
+
+
+def test_set_twin_fix_running_and_save_clears_it():
+    doc = store.insert_campaign(
+        workspace_key="darlean", campaign_name="T", raw_input={}, plan={},
+        validation_errors=[], is_twin=True,
+    )
+    cid = str(doc["_id"])
+    assert doc["twin_fix_running"] is False
+    running = store.set_twin_fix_running(cid, True)
+    assert running["twin_fix_running"] is True
+    done = store.save_twin_fix(cid, {"total_leads": 5, "leads_changed": 2})
+    assert done["twin_fix_running"] is False
+    assert done["twin_last_fix"]["leads_changed"] == 2
