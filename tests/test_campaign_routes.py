@@ -1176,3 +1176,18 @@ def test_create_twin_campaign_injects_fixed_sequence(client):
     seq = doc["current_plan"]["sequence"]
     assert seq[0]["variants"][0]["subject"] == "{{Subject 1}}"
     assert "{{Step 3}}" in seq[1]["variants"][0]["body"]
+
+
+def test_mark_as_twin_persists_flag_and_url(client):
+    resp = client.post(
+        "/api/campaigns/new",
+        data={"workspace_key": "darlean", "campaign_name": "Plain"},
+    )
+    cid = resp.headers["location"].rsplit("/", 1)[-1]
+    url = "https://app.smartlead.ai/app/email-campaign/777/overview"
+    r2 = client.post(f"/api/campaigns/{cid}/twin", data={"is_twin": "true", "twin_smartlead_url": url})
+    assert r2.status_code in (200, 303)
+    from app import store
+    doc = store.get_campaign(cid)
+    assert doc["is_twin"] is True
+    assert "777" in doc["twin_smartlead_url"]

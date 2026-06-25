@@ -515,6 +515,21 @@ def link_existing_smartlead_campaign(
     return _redirect_to_detail(request, campaign_id, {"ok": True, "smartlead_campaign_id": smartlead_id})
 
 
+@router.post("/api/campaigns/{campaign_id}/twin")
+def mark_twin(
+    campaign_id: str,
+    request: Request,
+    is_twin: bool = Form(False),
+    twin_smartlead_url: str = Form(""),
+) -> dict:
+    _require_campaign(campaign_id)
+    url = twin_smartlead_url.strip() or None
+    if url and _extract_smartlead_campaign_id(url) is None:
+        raise HTTPException(status_code=400, detail="Paste a valid Smartlead campaign URL or numeric ID")
+    store.set_twin(campaign_id, is_twin, url)
+    return _redirect_to_detail(request, campaign_id, {"ok": True, "is_twin": is_twin})
+
+
 @router.post("/api/campaigns/{campaign_id}/local-delete")
 def delete_local_campaign(campaign_id: str, request: Request):
     _require_campaign(campaign_id)
@@ -848,6 +863,9 @@ def _detail_payload(doc: dict) -> dict:
         "has_local_plan": has_local_plan,
         "validation_errors": doc.get("validation_errors") or [],
         "smartlead_campaign_id": doc.get("smartlead_campaign_id"),
+        "is_twin": doc.get("is_twin", False),
+        "twin_smartlead_url": doc.get("twin_smartlead_url"),
+        "twin_last_fix": doc.get("twin_last_fix"),
         "last_sync_error": doc.get("last_sync_error"),
         "spintax_status": spintax_status,
         "synced_at": store.to_display_tz(doc.get("synced_at")),

@@ -8,6 +8,7 @@
     <h1>{{ campaign.campaign_name }}</h1>
     <div class="detail-subline">
       <span class="badge status-{{ campaign.status }}">{{ campaign.status_label }}</span>
+      {% if campaign.is_twin %}<span class="badge status-synced">Twin</span>{% endif %}
       <span class="muted">Workspace {{ campaign.workspace_name }}{% if campaign.raw_input.parsed_messaging.selected_campaign %} · {{ campaign.raw_input.parsed_messaging.selected_campaign }}{% endif %}</span>
     </div>
   </div>
@@ -43,6 +44,31 @@
   </div>
 </div>
 {% endif %}
+
+<section class="detail-card">
+  <div class="card-head"><h2 class="card-title">Twin / Twain</h2></div>
+  {% if campaign.is_twin %}
+  <p class="card-lead">Twin campaign — bodies are Twain-personalized per-lead fields.</p>
+  <form method="post" action="/api/campaigns/{{ campaign.id }}/twin-fix" class="js-single-submit twin-fix-form">
+    <input class="input" name="twin_smartlead_url" placeholder="Smartlead campaign URL (optional — overrides the linked id)" value="{{ campaign.twin_smartlead_url or '' }}">
+    <button type="submit" class="button">Fix Twain spacing</button>
+  </form>
+  {% if campaign.twin_last_fix %}
+  <div class="twin-fix-summary">
+    <p>Last fix: {{ campaign.twin_last_fix.leads_changed }} of {{ campaign.twin_last_fix.total_leads }} leads changed.</p>
+    {% if campaign.twin_last_fix.template_repushed %}<p>Template join repaired and repushed.</p>{% endif %}
+    {% if campaign.twin_last_fix.greeting_flags %}<p>Greeting flags: {{ campaign.twin_last_fix.greeting_flags | length }}.</p>{% endif %}
+    {% if campaign.twin_last_fix.errors %}<p class="muted">Errors: {{ campaign.twin_last_fix.errors | length }}.</p>{% endif %}
+  </div>
+  {% endif %}
+  {% else %}
+  <form method="post" action="/api/campaigns/{{ campaign.id }}/twin" class="js-single-submit">
+    <input type="hidden" name="is_twin" value="true">
+    <input class="input" name="twin_smartlead_url" placeholder="Smartlead campaign URL (optional)">
+    <button type="submit" class="button secondary">Mark as twin</button>
+  </form>
+  {% endif %}
+</section>
 
 <div class="detail-grid">
   <div class="detail-main">
