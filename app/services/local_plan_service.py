@@ -1,5 +1,7 @@
 import string
 
+from app.services.twain_service import twain_sequence_plan
+
 
 def build_campaign_plan_from_input(raw_input: dict, note: str | None = None) -> dict:
     parsed = raw_input.get("parsed_messaging") or {}
@@ -111,3 +113,44 @@ def _label_for_index(index: int) -> str:
     if index < len(string.ascii_uppercase):
         return string.ascii_uppercase[index]
     return f"V{index + 1}"
+
+
+def build_twin_campaign_plan(raw_input: dict, followup_delay_days: int = 3) -> dict:
+    """A twin campaign: fixed Twain sequence, no messaging parse.
+
+    The per-lead body content (Subject 1 / Step 1 / Step 3) is filled by Twain
+    externally; here we only author the template that references it.
+    """
+    max_new_leads_per_day = int(raw_input.get("max_new_leads_per_day") or 100)
+    return {
+        "workspace_key": raw_input["workspace_key"],
+        "client_key": None,
+        "campaign_name": raw_input["campaign_name"],
+        "template_family": "twain_twin_v1",
+        "goal": "book_meeting",
+        "lead_source": {"type": "none", "expected_count": None},
+        "schedule": {
+            "timezone": "America/New_York",
+            "days_of_the_week": [1, 2, 3, 4, 5],
+            "start_hour": "09:00",
+            "end_hour": "18:00",
+            "min_time_btw_emails": 17,
+            "max_new_leads_per_day": max_new_leads_per_day,
+        },
+        "settings": {
+            "send_as_plain_text": True,
+            "track_opens": False,
+            "track_clicks": False,
+            "stop_on_reply": True,
+            "enable_ai_esp_matching": True,
+            "auto_pause_domain_leads_on_reply": True,
+            "ooo_restart_delay_days": 10,
+        },
+        "inbox_selection": {"mode": "skip", "email_account_ids": [], "provider_mix": {"gmail": 0.7, "outlook": 0.3}},
+        "sequence": twain_sequence_plan(followup_delay_days),
+        "approval_required": True,
+        "notes_for_operator": [
+            "Twin campaign: bodies are Twain-personalized per-lead custom fields.",
+            "Run 'Fix Twain spacing' after leads are pushed.",
+        ],
+    }

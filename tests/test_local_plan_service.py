@@ -1,4 +1,5 @@
-from app.services.local_plan_service import build_campaign_plan_from_input
+from app.services.local_plan_service import build_campaign_plan_from_input, build_twin_campaign_plan
+from app.services.validation_service import validate_campaign_plan
 
 
 def test_delay_days_derived_from_parsed_day_offsets():
@@ -94,3 +95,22 @@ def test_build_campaign_plan_includes_all_email_steps_and_notes_skipped_empty_st
     assert [step["step_number"] for step in plan["sequence"]] == [1, 3, 4, 5]
     assert "Parser warning." in plan["notes_for_operator"]
     assert "Skipped step 2 because no body variants were parsed." in plan["notes_for_operator"]
+
+
+def test_build_twin_campaign_plan_uses_fixed_sequence():
+    raw = {"workspace_key": "darlean", "campaign_name": "Events - Twain", "max_new_leads_per_day": 80}
+    plan = build_twin_campaign_plan(raw)
+    assert plan["workspace_key"] == "darlean"
+    assert plan["campaign_name"] == "Events - Twain"
+    assert plan["schedule"]["max_new_leads_per_day"] == 80
+    seq = plan["sequence"]
+    assert [s["step_number"] for s in seq] == [1, 2]
+    assert seq[0]["variants"][0]["subject"] == "{{Subject 1}}"
+    assert "{{Step 1}}" in seq[0]["variants"][0]["body"]
+    assert "{{Step 3}}" in seq[1]["variants"][0]["body"]
+
+
+def test_twin_plan_passes_validation():
+    raw = {"workspace_key": "darlean", "campaign_name": "Events - Twain", "max_new_leads_per_day": 80}
+    plan = build_twin_campaign_plan(raw)
+    assert validate_campaign_plan(plan, {"darlean"}) == []
