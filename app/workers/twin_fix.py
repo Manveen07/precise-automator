@@ -10,7 +10,7 @@ import asyncio
 import re
 
 from app.config import get_workspace_config
-from app.services.sequence_builder import build_smartlead_sequences, smartlead_html_to_text
+from app.services.sequence_builder import build_smartlead_sequences
 from app.services.smartlead_service import SmartleadService
 from app.services.twain_service import (
     audit_twain_field,
@@ -51,6 +51,7 @@ def _resolve_target_id(doc: dict, override_url: str | None) -> int | None:
 
 async def _run_twin_fix(campaign_id: str, override_url: str | None) -> dict:
     summary = {
+        "ran_at": store.now_utc(),
         "campaign_id": None,
         "total_leads": 0,
         "leads_changed": 0,

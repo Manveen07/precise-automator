@@ -28,8 +28,8 @@ from app.services.sequence_builder import (
     format_subject_for_smartlead,
     smartlead_html_to_text,
 )
-from app.services.twain_service import audit_twain_field
 from app.services.smartlead_service import SmartleadService
+from app.services.twain_service import audit_twain_field
 from app.services.validation_service import validate_campaign_plan
 from app import store
 

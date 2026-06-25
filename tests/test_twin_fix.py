@@ -99,6 +99,8 @@ def test_fix_flags_greeting_issues(monkeypatch):
         kinds = {f["flag"] for f in summary["greeting_flags"]}
         assert "step1_has_greeting" in kinds
         assert "step3_missing_greeting" in kinds
+        # Both fields are already clean — flagging must not trigger a write.
+        assert summary["leads_changed"] == 0
 
     asyncio.run(run())
 
