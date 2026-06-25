@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+from app import store
 from app.store import to_display_tz, DISPLAY_TZ
 
 
@@ -30,3 +31,44 @@ def test_already_in_display_tz_is_unchanged():
     result = to_display_tz(in_ist)
     assert result.hour == 12
     assert result.minute == 41
+
+
+# Tests for twin field persistence
+def _new(**kw):
+    return store.insert_campaign(
+        workspace_key="darlean",
+        campaign_name="T",
+        raw_input={},
+        plan={},
+        validation_errors=[],
+        **kw,
+    )
+
+
+def test_insert_defaults_not_twin():
+    doc = _new()
+    assert doc["is_twin"] is False
+    assert doc["twin_smartlead_url"] is None
+    assert doc["twin_last_fix"] is None
+
+
+def test_insert_twin_fields():
+    doc = _new(is_twin=True, twin_smartlead_url="https://app.smartlead.ai/app/email-campaign/42/overview")
+    assert doc["is_twin"] is True
+    assert "42" in doc["twin_smartlead_url"]
+
+
+def test_set_twin_updates_flag_and_url():
+    doc = _new()
+    cid = str(doc["_id"])
+    updated = store.set_twin(cid, True, "https://app.smartlead.ai/app/email-campaign/42/overview")
+    assert updated["is_twin"] is True
+    assert "42" in updated["twin_smartlead_url"]
+
+
+def test_save_twin_fix_persists_summary():
+    doc = _new(is_twin=True)
+    cid = str(doc["_id"])
+    summary = {"total_leads": 10, "leads_changed": 3, "errors": []}
+    updated = store.save_twin_fix(cid, summary)
+    assert updated["twin_last_fix"]["leads_changed"] == 3

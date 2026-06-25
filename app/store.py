@@ -84,6 +84,8 @@ def insert_campaign(
     smartlead_client_match: str | None = None,
     status: str | None = None,
     created_by: str | None = None,
+    is_twin: bool = False,
+    twin_smartlead_url: str | None = None,
 ) -> dict:
     now = now_utc()
     status = status or ("drafting" if validation_errors else "ready")
@@ -100,6 +102,9 @@ def insert_campaign(
         "status": status,
         "last_sync_error": None,
         "created_by": created_by,
+        "is_twin": is_twin,
+        "twin_smartlead_url": twin_smartlead_url,
+        "twin_last_fix": None,
         "created_at": now,
         "updated_at": now,
     }
@@ -166,6 +171,28 @@ def mark_sync_failed(campaign_id: str, error_text: str) -> dict | None:
                 "updated_at": now_utc(),
             }
         },
+        return_document=True,
+    )
+
+
+def set_twin(campaign_id: str, is_twin: bool, twin_smartlead_url: str | None) -> dict | None:
+    oid = to_object_id(campaign_id)
+    if not oid:
+        return None
+    return campaigns_collection().find_one_and_update(
+        {"_id": oid},
+        {"$set": {"is_twin": is_twin, "twin_smartlead_url": twin_smartlead_url, "updated_at": now_utc()}},
+        return_document=True,
+    )
+
+
+def save_twin_fix(campaign_id: str, summary: dict) -> dict | None:
+    oid = to_object_id(campaign_id)
+    if not oid:
+        return None
+    return campaigns_collection().find_one_and_update(
+        {"_id": oid},
+        {"$set": {"twin_last_fix": summary, "updated_at": now_utc()}},
         return_document=True,
     )
 
