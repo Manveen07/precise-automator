@@ -1161,3 +1161,18 @@ def test_variant_distribution_rejects_count_mismatch(client):
         data={"step_number": "1", "percentages": ["100"]},
     )
     assert response.status_code == 400
+
+
+def test_create_twin_campaign_injects_fixed_sequence(client):
+    resp = client.post(
+        "/api/campaigns/new",
+        data={"workspace_key": "darlean", "campaign_name": "Events - Twain", "is_twin": "true"},
+    )
+    assert resp.status_code == 303
+    cid = resp.headers["location"].rsplit("/", 1)[-1]
+    from app import store
+    doc = store.get_campaign(cid)
+    assert doc["is_twin"] is True
+    seq = doc["current_plan"]["sequence"]
+    assert seq[0]["variants"][0]["subject"] == "{{Subject 1}}"
+    assert "{{Step 3}}" in seq[1]["variants"][0]["body"]

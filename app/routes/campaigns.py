@@ -35,7 +35,7 @@ from app.config import (
 from app.services.anthropic_service import AnthropicCampaignService
 from app.services.inbox_selection_service import select_inboxes
 from app.services.inbox_sheet_service import InboxSheetError, fetch_inbox_rows, fetch_last_sync
-from app.services.local_plan_service import build_campaign_plan_from_input
+from app.services.local_plan_service import build_campaign_plan_from_input, build_twin_campaign_plan
 from app.services.parser_service import parse_messaging_file
 from app.services.sequence_builder import smartlead_html_to_text
 from app.services.smartlead_import_service import build_campaign_plan_from_smartlead
@@ -106,6 +106,7 @@ async def create_campaign(
     smartlead_campaign_ref: str = Form(""),
     messaging_text: str = Form(""),
     selected_sequence_name: str = Form(""),
+    is_twin: bool = Form(False),
     messaging_file: UploadFile | None = File(None),
 ) -> RedirectResponse:
     workspace = get_workspace_config(workspace_key)
@@ -143,7 +144,11 @@ async def create_campaign(
         "messaging_text": final_text,
         "parsed_messaging": parsed_messaging,
     }
-    if imported_plan:
+    if is_twin:
+        plan = build_twin_campaign_plan(raw_input)
+        errors = validate_campaign_plan(plan, _active_workspace_keys())
+        status = None
+    elif imported_plan:
         plan = imported_plan
         errors = validate_campaign_plan(plan, _active_workspace_keys())
         status = None
@@ -169,6 +174,8 @@ async def create_campaign(
         smartlead_client_name=smartlead_client["name"] if smartlead_client else None,
         smartlead_client_match=smartlead_client["matched_alias"] if smartlead_client else None,
         status=status,
+        is_twin=is_twin,
+        twin_smartlead_url=None,
     )
     return RedirectResponse(f"/campaigns/{doc['_id']}", status_code=303)
 
