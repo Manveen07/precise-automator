@@ -31,6 +31,7 @@ from app.config import (
     get_workspace_config,
     infer_smartlead_client,
     settings,
+    static_asset_version,
 )
 from app.services.anthropic_service import AnthropicCampaignService
 from app.services.inbox_selection_service import select_inboxes
@@ -50,6 +51,7 @@ router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 # Render Smartlead email bodies (HTML with <br> + spintax) as readable plain text.
 templates.env.filters["smartlead_text"] = smartlead_html_to_text
+templates.env.globals["asset_version"] = static_asset_version()
 
 
 # ----- Pages ----- #

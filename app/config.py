@@ -8,6 +8,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from dotenv import dotenv_values
 
 
+def static_asset_version() -> int:
+    """Mtime of the stylesheet, used to cache-bust /static/styles.css in templates."""
+    try:
+        return int(os.path.getmtime("app/static/styles.css"))
+    except OSError:
+        return 0
+
+
 SMARTLEAD_WORKSPACES = [
     {
         "key": "preciselead",

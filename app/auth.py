@@ -7,11 +7,12 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
-from app.config import get_secret_value, settings
+from app.config import get_secret_value, settings, static_asset_version
 
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
+templates.env.globals["asset_version"] = static_asset_version()
 security = HTTPBasic(auto_error=False)
 COOKIE_NAME = "precise_automator_session"
 SESSION_MAX_AGE_SECONDS = 12 * 60 * 60
