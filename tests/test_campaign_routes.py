@@ -1232,3 +1232,42 @@ def test_detail_renders_when_raw_input_missing_parsed_messaging(client):
     r = client.get(f"/campaigns/{str(doc['_id'])}")
     assert r.status_code == 200
     assert ">Twain<" in r.text
+
+
+def test_save_linkedin_messages_sets_channel_steps(client):
+    resp = client.post("/api/campaigns/new", data={"workspace_key": "darlean", "campaign_name": "LI"})
+    cid = resp.headers["location"].rsplit("/", 1)[-1]
+    # Send multi-value form field as explicit urlencoded body (httpx list-in-dict is unreliable)
+    import urllib.parse
+    body = urllib.parse.urlencode([("messages", "Hi {{first_name}}"), ("messages", "Follow up")])
+    r = client.post(
+        f"/api/campaigns/{cid}/linkedin-messages",
+        content=body,
+        headers={"content-type": "application/x-www-form-urlencoded"},
+    )
+    assert r.status_code in (200, 303)
+    from app.schemas.campaign_plan import linkedin_messages
+    from app import store
+    plan = store.get_campaign(cid)["current_plan"]
+    assert linkedin_messages(plan) == ["Hi {{first_name}}", "Follow up"]
+
+
+def test_heyreach_create_rejected_without_linkedin_steps(client):
+    resp = client.post("/api/campaigns/new", data={"workspace_key": "darlean", "campaign_name": "Email only",
+                       "messaging_text": "Subject Line Options:\n1. T\n\nEmail 1\nV1\nBody"})
+    cid = resp.headers["location"].rsplit("/", 1)[-1]
+    r = client.post(f"/api/campaigns/{cid}/heyreach-create", data={})
+    assert r.status_code == 400
+
+
+def test_heyreach_create_schedules_and_flags(client, monkeypatch):
+    import app.routes.campaigns as routes
+    calls = {}
+    monkeypatch.setattr(routes, "create_heyreach_campaign_now", lambda cid: calls.setdefault("cid", cid))
+    resp = client.post("/api/campaigns/new", data={"workspace_key": "darlean", "campaign_name": "LI"})
+    cid = resp.headers["location"].rsplit("/", 1)[-1]
+    client.post(f"/api/campaigns/{cid}/linkedin-messages", data={"messages": ["Hi"]})
+    r = client.post(f"/api/campaigns/{cid}/heyreach-create", data={})
+    assert r.status_code in (200, 303)
+    assert calls["cid"] == cid
+    assert client.get(f"/api/campaigns/{cid}/status").json()["heyreach_creating"] is True

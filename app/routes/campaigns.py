@@ -20,7 +20,7 @@ import re
 from anthropic import AnthropicError
 
 _log = logging.getLogger("app.routes.campaigns")
-from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, Request, Response, UploadFile
 import httpx
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -44,6 +44,8 @@ from app.services.smartlead_service import SmartleadService
 from app.services.spintax_service import apply_spintax_to_plan, count_bodies_needing_spintax
 from app.services.validation_service import validate_campaign_plan
 from app import store
+from app.schemas.campaign_plan import linkedin_messages
+from app.workers.heyreach_create import create_heyreach_campaign_now
 from app.workers.sync_campaign import sync_campaign_now
 from app.workers.twin_fix import run_twin_fix_now
 
@@ -95,6 +97,8 @@ def campaign_status(campaign_id: str) -> dict:
         "smartlead_campaign_id": doc.get("smartlead_campaign_id"),
         "last_sync_error": doc.get("last_sync_error"),
         "twin_fix_running": doc.get("twin_fix_running", False),
+        "heyreach_creating": doc.get("heyreach_creating", False),
+        "heyreach_campaign_url": doc.get("heyreach_campaign_url"),
         "updated_at": store.to_display_tz(doc.get("updated_at")).isoformat() if doc.get("updated_at") else None,
     }
 
@@ -534,6 +538,44 @@ def mark_twin(
     return _redirect_to_detail(request, campaign_id, {"ok": True, "is_twin": is_twin})
 
 
+@router.post("/api/campaigns/{campaign_id}/linkedin-messages")
+async def save_linkedin_messages(
+    campaign_id: str, request: Request
+) -> Response:
+    doc = _require_campaign(campaign_id)
+    form = await request.form()
+    raw_messages = form.getlist("messages")
+    plan = doc.get("current_plan") or {}
+    bodies = [m.strip() for m in raw_messages if m and m.strip()][:3]
+    email_steps = [s for s in (plan.get("sequence") or []) if s.get("channel") != "linkedin"]
+    base = max([s.get("step_number", 0) for s in email_steps], default=0)
+    linkedin_steps = [
+        {
+            "step_number": base + i + 1,
+            "delay_days": 0,
+            "channel": "linkedin",
+            "variants": [{"variant_label": "A", "subject": "", "body": body}],
+        }
+        for i, body in enumerate(bodies)
+    ]
+    plan["sequence"] = email_steps + linkedin_steps
+    errors = validate_campaign_plan(plan, _active_workspace_keys())
+    store.update_plan(campaign_id, plan, errors)
+    return _redirect_to_detail(request, campaign_id, {"ok": True})
+
+
+@router.post("/api/campaigns/{campaign_id}/heyreach-create")
+def heyreach_create_route(
+    campaign_id: str, request: Request, background_tasks: BackgroundTasks
+) -> Response:
+    doc = _require_campaign(campaign_id)
+    if not linkedin_messages(doc.get("current_plan") or {}):
+        raise HTTPException(status_code=400, detail="No LinkedIn steps. Add LinkedIn messages first.")
+    store.set_heyreach_creating(campaign_id, True)
+    background_tasks.add_task(create_heyreach_campaign_now, campaign_id)
+    return _redirect_to_detail(request, campaign_id, {"ok": True, "queued": True})
+
+
 @router.post("/api/campaigns/{campaign_id}/twin-fix")
 def twin_fix(
     campaign_id: str,
@@ -887,6 +929,12 @@ def _detail_payload(doc: dict) -> dict:
         "twin_smartlead_url": doc.get("twin_smartlead_url"),
         "twin_last_fix": doc.get("twin_last_fix"),
         "twin_fix_running": doc.get("twin_fix_running", False),
+        "heyreach_campaign_id": doc.get("heyreach_campaign_id"),
+        "heyreach_campaign_url": doc.get("heyreach_campaign_url"),
+        "heyreach_status": doc.get("heyreach_status"),
+        "heyreach_creating": doc.get("heyreach_creating", False),
+        "heyreach_last_error": doc.get("heyreach_last_error"),
+        "linkedin_messages": linkedin_messages(doc.get("current_plan") or {}),
         "last_sync_error": doc.get("last_sync_error"),
         "spintax_status": spintax_status,
         "synced_at": store.to_display_tz(doc.get("synced_at")),
