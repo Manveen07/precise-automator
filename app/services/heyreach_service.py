@@ -28,7 +28,7 @@ class HeyReachService:
                     request=response.request,
                     response=response,
                 )
-            return response.json()
+            return response.json() if response.text.strip() else {}
 
     async def get(self, endpoint: str, params: dict | None = None) -> dict:
         async with httpx.AsyncClient(timeout=90) as client:
