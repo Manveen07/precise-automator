@@ -52,6 +52,7 @@ class SequenceVariant(BaseModel):
 class SequenceStep(BaseModel):
     step_number: int
     delay_days: int
+    channel: Literal["email", "linkedin"] = "email"
     variants: list[SequenceVariant]
 
     @field_validator("variants")
@@ -103,6 +104,18 @@ class CampaignPlan(BaseModel):
         if len(value) > 4:
             raise ValueError("V1 supports at most 4 sequence steps")
         return value
+
+
+def linkedin_messages(plan: dict) -> list[str]:
+    """First-variant bodies of LinkedIn-channel steps, in step_number order."""
+    steps = [s for s in (plan.get("sequence") or []) if s.get("channel") == "linkedin"]
+    steps.sort(key=lambda s: s.get("step_number", 0))
+    out: list[str] = []
+    for step in steps:
+        variants = step.get("variants") or []
+        if variants and variants[0].get("body"):
+            out.append(variants[0]["body"])
+    return out
 
 
 def _parse_schedule_time(value: str) -> time:
