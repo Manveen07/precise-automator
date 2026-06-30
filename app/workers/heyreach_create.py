@@ -67,7 +67,19 @@ async def _create_async(campaign_id: str) -> dict:
     try:
         # Fetch all sender accounts
         accounts_response = await heyreach.get_linkedin_accounts()
-        account_ids = _account_ids(accounts_response)
+        all_ids = _account_ids(accounts_response)
+
+        # Filter by per-client account mapping when one is configured
+        from app.config import get_heyreach_account_ids_for_client
+        client_name = doc.get("smartlead_client_name")
+        workspace_key = doc.get("smartlead_workspace", "")
+        mapped_ids = get_heyreach_account_ids_for_client(workspace_key, client_name)
+        if mapped_ids is not None:
+            filtered = [i for i in all_ids if i in mapped_ids]
+            # Fall back to all accounts if none of the mapped IDs exist in this workspace
+            all_ids = filtered if filtered else all_ids
+
+        account_ids = all_ids
         if not account_ids:
             raise RuntimeError("No LinkedIn sender accounts in this workspace")
 
