@@ -86,3 +86,40 @@ def test_set_twin_fix_running_and_save_clears_it():
     done = store.save_twin_fix(cid, {"total_leads": 5, "leads_changed": 2})
     assert done["twin_fix_running"] is False
     assert done["twin_last_fix"]["leads_changed"] == 2
+
+
+def test_insert_defaults_heyreach_fields():
+    doc = store.insert_campaign(
+        workspace_key="darlean", campaign_name="T", raw_input={}, plan={},
+        validation_errors=[],
+    )
+    assert doc["heyreach_campaign_id"] is None
+    assert doc["heyreach_creating"] is False
+    assert doc["heyreach_status"] is None
+
+
+def test_set_heyreach_creating_and_save_result():
+    doc = store.insert_campaign(
+        workspace_key="darlean", campaign_name="T", raw_input={}, plan={}, validation_errors=[],
+    )
+    cid = str(doc["_id"])
+    assert store.set_heyreach_creating(cid, True)["heyreach_creating"] is True
+    done = store.save_heyreach_result(
+        cid, campaign_id_value=472000, url="https://app.heyreach.io/app/campaigns/472000",
+        status="draft_created",
+    )
+    assert done["heyreach_campaign_id"] == 472000
+    assert "472000" in done["heyreach_campaign_url"]
+    assert done["heyreach_status"] == "draft_created"
+    assert done["heyreach_creating"] is False
+
+
+def test_save_heyreach_result_records_error():
+    doc = store.insert_campaign(
+        workspace_key="darlean", campaign_name="T", raw_input={}, plan={}, validation_errors=[],
+    )
+    cid = str(doc["_id"])
+    done = store.save_heyreach_result(cid, campaign_id_value=None, url=None, status="failed", error="no senders")
+    assert done["heyreach_status"] == "failed"
+    assert done["heyreach_last_error"] == "no senders"
+    assert done["heyreach_creating"] is False
