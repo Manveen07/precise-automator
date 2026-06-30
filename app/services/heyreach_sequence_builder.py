@@ -19,21 +19,21 @@ def to_heyreach_message(body: str) -> tuple[str, str]:
     return message, fallback
 
 
-def _like_post(delay: int = 2, unit: str = "DAY") -> dict:
+def _like_post(delay: int = 3, unit: str = "DAY") -> dict:
     return {
         "nodeType": "LIKE_POST",
         "actionDelay": delay,
         "actionDelayUnit": unit,
         "payload": {
             "reactionType": "LIKE",
-            "randomReaction": False,
+            "randomReaction": True,
             "reactBefore": "MONTH1",
-            "skipDelayIfCannotLike": False,
+            "skipDelayIfCannotLike": True,
         },
     }
 
 
-def _view_profile(delay: int = 2, unit: str = "DAY") -> dict:
+def _view_profile(delay: int = 3, unit: str = "DAY") -> dict:
     return {"nodeType": "VIEW_PROFILE", "actionDelay": delay, "actionDelayUnit": unit}
 
 
@@ -49,13 +49,13 @@ def _message_chain(messages: list[str], idx: int) -> dict:
     message, fallback = to_heyreach_message(messages[idx])
     node = {
         "nodeType": "MESSAGE",
-        "actionDelay": 3,
-        "actionDelayUnit": "HOUR",
+        "actionDelay": 1,
+        "actionDelayUnit": "DAY",
         "payload": {"messages": [message], "fallbackMessage": fallback},
         "conditionalNode": _end(0, "HOUR"),  # replied -> exit
     }
     if idx == len(messages) - 1:
-        node["unconditionalNode"] = _end(2, "DAY")
+        node["unconditionalNode"] = _end(3, "DAY")
     else:
         interaction = _interaction(idx)
         interaction["unconditionalNode"] = _message_chain(messages, idx + 1)
@@ -87,16 +87,16 @@ def build_linkedin_sequence(
         "conditionalNode": _message_chain(messages, 0),
         "unconditionalNode": {
             "nodeType": "VIEW_PROFILE",
-            "actionDelay": 3,
-            "actionDelayUnit": "HOUR",
+            "actionDelay": 1,
+            "actionDelayUnit": "DAY",
             "unconditionalNode": {
                 "nodeType": "CONNECTION_REQUEST",
-                "actionDelay": 3,
-                "actionDelayUnit": "HOUR",
+                "actionDelay": 2,
+                "actionDelayUnit": "DAY",
                 "payload": {"messages": cr_messages, "fallbackMessage": cr_fallback, "toBeWithdrawnAfterDays": withdraw_days},
                 "conditionalNode": _message_chain(messages, 0),
                 "unconditionalNode": {
-                    **_like_post(2, "DAY"),
+                    **_like_post(3, "DAY"),
                     "unconditionalNode": _end(1, "DAY"),
                 },
             },
