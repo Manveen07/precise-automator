@@ -1,4 +1,5 @@
 from functools import lru_cache
+import json
 import os
 from pathlib import Path
 import re
@@ -220,3 +221,27 @@ def _client_alias_matches(campaign_name: str, alias: str) -> bool:
 
 def _compact_match_key(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", value.lower())
+
+
+def get_heyreach_account_ids_for_client(workspace_key: str, client_name: str | None) -> list[int] | None:
+    """Return HeyReach account IDs for a named client, or None to use all accounts.
+
+    Reads HEYREACH_{WORKSPACE}_CLIENT_ACCOUNTS env var as JSON dict:
+    {"ClientName": [101, 102], "OtherClient": [201]}
+    Returns None if env var absent, client_name is None, or client not in mapping.
+    """
+    if not client_name:
+        return None
+    env_var = f"HEYREACH_{workspace_key.upper()}_CLIENT_ACCOUNTS"
+    raw = get_secret_value(env_var)
+    if not raw:
+        return None
+    try:
+        mapping: dict = json.loads(raw)
+    except (ValueError, TypeError):
+        return None
+    client_lower = client_name.lower()
+    for key, ids in mapping.items():
+        if key.lower() == client_lower:
+            return [int(i) for i in ids]
+    return None
