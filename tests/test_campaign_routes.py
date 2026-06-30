@@ -1274,3 +1274,46 @@ def test_heyreach_create_schedules_and_flags(client, monkeypatch):
     assert r.status_code in (200, 303)
     assert calls["cid"] == cid
     assert client.get(f"/api/campaigns/{cid}/status").json()["heyreach_creating"] is True
+
+
+@pytest.fixture
+def sample_campaign_doc():
+    """A campaign with a minimal email sequence (no LinkedIn steps)."""
+    return store.insert_campaign(
+        workspace_key="preciselead",
+        campaign_name="Sample Campaign",
+        raw_input={"workspace_key": "preciselead", "campaign_name": "Sample Campaign", "parsed_messaging": {}},
+        plan={
+            "workspace_key": "preciselead",
+            "campaign_name": "Sample Campaign",
+            "template_family": "cold_email_standard_v1",
+            "schedule": {"max_new_leads_per_day": 50, "start_hour": "09:00", "end_hour": "18:00", "timezone": "America/New_York"},
+            "settings": {"send_as_plain_text": True, "track_opens": False, "track_clicks": False, "stop_on_reply": True,
+                         "enable_ai_esp_matching": True, "auto_pause_domain_leads_on_reply": True, "ooo_restart_delay_days": 10},
+            "inbox_selection": {"mode": "skip", "email_account_ids": []},
+            "sequence": [
+                {"step_number": 1, "delay_days": 0, "variants": [{"variant_label": "A", "subject": "Hi", "body": "Body"}]},
+            ],
+            "approval_required": False,
+            "notes_for_operator": [],
+        },
+        validation_errors=[],
+    )
+
+
+def test_campaign_status_includes_has_linkedin_steps(client, sample_campaign_doc):
+    """Status endpoint reports has_linkedin_steps=True when plan has LinkedIn steps."""
+    # Insert campaign with LinkedIn steps in plan
+    from app import store as app_store
+    plan_with_li = dict(sample_campaign_doc.get("current_plan") or {})
+    plan_with_li["sequence"] = plan_with_li.get("sequence", []) + [{
+        "step_number": 99, "channel": "linkedin", "delay_days": 0,
+        "linkedin_subtype": "dm", "variants": [{"body": "DM body"}]
+    }]
+    campaign_id = str(sample_campaign_doc["_id"])
+    app_store.update_plan(campaign_id, plan_with_li, [])
+
+    resp = client.get(f"/api/campaigns/{campaign_id}/status")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["has_linkedin_steps"] is True

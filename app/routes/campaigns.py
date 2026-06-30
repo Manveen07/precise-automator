@@ -99,6 +99,7 @@ def campaign_status(campaign_id: str) -> dict:
         "twin_fix_running": doc.get("twin_fix_running", False),
         "heyreach_creating": doc.get("heyreach_creating", False),
         "heyreach_campaign_url": doc.get("heyreach_campaign_url"),
+        "has_linkedin_steps": bool(linkedin_messages(doc.get("current_plan") or {})),
         "updated_at": store.to_display_tz(doc.get("updated_at")).isoformat() if doc.get("updated_at") else None,
     }
 
@@ -935,6 +936,7 @@ def _detail_payload(doc: dict) -> dict:
         "heyreach_creating": doc.get("heyreach_creating", False),
         "heyreach_last_error": doc.get("heyreach_last_error"),
         "linkedin_messages": linkedin_messages(doc.get("current_plan") or {}),
+        "has_linkedin_steps": bool(linkedin_messages(doc.get("current_plan") or {})),
         "last_sync_error": doc.get("last_sync_error"),
         "spintax_status": spintax_status,
         "synced_at": store.to_display_tz(doc.get("synced_at")),
