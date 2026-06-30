@@ -206,3 +206,42 @@ def test_sync_heyreach_failure_does_not_fail_smartlead():
     mock_store.save_heyreach_result.assert_called_once()
     err_kwarg = mock_store.save_heyreach_result.call_args[1].get("error") or mock_store.save_heyreach_result.call_args[0]
     assert err_kwarg  # error text populated
+
+
+def test_sync_does_not_retry_heyreach_when_attempt_already_recorded():
+    """Smartlead resync should not create another HeyReach draft after any prior HeyReach attempt."""
+    from app.workers.sync_campaign import _sync_campaign_async
+
+    doc = _make_doc(with_linkedin=True)
+    doc["smartlead_campaign_id"] = 123
+    doc["heyreach_campaign_id"] = None
+    doc["heyreach_status"] = "failed"
+    doc["heyreach_last_error"] = "campaign id missing after create"
+    campaign_id = str(doc["_id"])
+    mock_smartlead = _make_mock_smartlead_for_doc(doc, smartlead_id=123)
+
+    heyreach_called = []
+
+    async def fake_heyreach_async(cid):
+        heyreach_called.append(cid)
+
+    with (
+        patch("app.workers.sync_campaign.store") as mock_store,
+        patch("app.workers.sync_campaign.SmartleadService", return_value=mock_smartlead),
+        patch(
+            "app.workers.sync_campaign.get_workspace_config",
+            return_value={"key": "preciselead", "api_key": "sl-key", "self_client_name": "PreciseLeads"},
+        ),
+        patch("app.workers.sync_campaign.validate_campaign_plan", return_value=[]),
+        patch("app.workers.sync_campaign._create_async", side_effect=fake_heyreach_async),
+    ):
+        mock_store.get_campaign.return_value = doc
+        mock_store.campaigns_collection.return_value.update_one = MagicMock()
+        mock_store.attach_smartlead = MagicMock()
+        mock_store.set_heyreach_creating = MagicMock()
+        mock_store.now_utc = MagicMock()
+
+        asyncio.run(_sync_campaign_async(campaign_id))
+
+    assert heyreach_called == []
+    mock_store.set_heyreach_creating.assert_not_called()

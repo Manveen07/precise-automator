@@ -3,11 +3,14 @@ import re
 _WITHDRAW_DAYS_DEFAULT = 25
 
 
-def to_heyreach_message(body: str) -> tuple[str, str]:
+def to_heyreach_message(body: str, *, collapse_whitespace: bool = False) -> tuple[str, str]:
     text = (body or "")
     for sig in ("%signature%", "%Signature%", "%SIGNATURE%"):
         text = text.replace(sig, "")
     text = text.strip()
+    if collapse_whitespace:
+        text = re.sub(r"\s+", " ", text)
+        text = re.sub(r"\s+([,\.!?])", r"\1", text)
 
     def render(first: str, company: str) -> str:
         return (
@@ -76,7 +79,7 @@ def build_linkedin_sequence(
     if not messages or len(messages) > 3:
         raise ValueError("LinkedIn sequence needs 1 to 3 messages")
     if connection_note.strip():
-        note_text, note_fallback = to_heyreach_message(connection_note)
+        note_text, note_fallback = to_heyreach_message(connection_note, collapse_whitespace=True)
     else:
         note_text = ""
         note_fallback = ""

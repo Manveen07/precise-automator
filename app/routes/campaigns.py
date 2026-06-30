@@ -46,7 +46,7 @@ from app.services.validation_service import validate_campaign_plan
 from app import store
 from app.schemas.campaign_plan import linkedin_messages
 from app.workers.heyreach_create import create_heyreach_campaign_now
-from app.workers.sync_campaign import sync_campaign_now
+from app.workers.sync_campaign import _has_heyreach_attempt, sync_campaign_now
 from app.workers.twin_fix import run_twin_fix_now
 
 router = APIRouter()
@@ -572,6 +572,8 @@ def heyreach_create_route(
     doc = _require_campaign(campaign_id)
     if not linkedin_messages(doc.get("current_plan") or {}):
         raise HTTPException(status_code=400, detail="No LinkedIn steps. Add LinkedIn messages first.")
+    if _has_heyreach_attempt(doc):
+        return _redirect_to_detail(request, campaign_id, {"ok": True, "queued": False})
     store.set_heyreach_creating(campaign_id, True)
     background_tasks.add_task(create_heyreach_campaign_now, campaign_id)
     return _redirect_to_detail(request, campaign_id, {"ok": True, "queued": True})

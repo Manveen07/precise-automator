@@ -130,7 +130,7 @@ async def _maybe_create_heyreach(campaign_id: str, plan: dict) -> None:
         return
     # Skip if a HeyReach campaign already exists for this campaign doc
     doc = store.get_campaign(campaign_id)
-    if doc and doc.get("heyreach_campaign_id"):
+    if doc and _has_heyreach_attempt(doc):
         return
     store.set_heyreach_creating(campaign_id, True)
     try:
@@ -143,6 +143,16 @@ async def _maybe_create_heyreach(campaign_id: str, plan: dict) -> None:
             status="failed",
             error=_error_text(exc),
         )
+
+
+def _has_heyreach_attempt(doc: dict) -> bool:
+    return bool(
+        doc.get("heyreach_campaign_id")
+        or doc.get("heyreach_campaign_url")
+        or doc.get("heyreach_creating")
+        or doc.get("heyreach_status")
+        or doc.get("heyreach_last_error")
+    )
 
 
 def _active_workspace_keys() -> set[str]:

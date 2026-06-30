@@ -131,6 +131,30 @@ def test_build_linkedin_sequence_connection_note_used():
     assert note != ""
 
 
+def test_build_linkedin_sequence_connection_note_collapses_source_spacing():
+    from app.services.heyreach_sequence_builder import build_linkedin_sequence
+
+    tree = build_linkedin_sequence(
+        ["Follow-up message"],
+        connection_note=(
+            "{{first_name}} , I led the strategy work behind Cone Health's brand transformation.\n\n"
+            "A few things we learned there might apply to {{company}} as well.\n\n"
+            "Would love to connect."
+        ),
+    )
+
+    cr_node = tree["unconditionalNode"]["unconditionalNode"]
+    note = cr_node["payload"]["messages"][0]
+    fallback = cr_node["payload"]["fallbackMessage"]
+    assert note == (
+        "{FIRST_NAME}, I led the strategy work behind Cone Health's brand transformation. "
+        "A few things we learned there might apply to {COMPANY} as well. "
+        "Would love to connect."
+    )
+    assert fallback.startswith("there, I led")
+    assert "\n" not in note
+
+
 def test_build_linkedin_sequence_blank_note_default():
     from app.services.heyreach_sequence_builder import build_linkedin_sequence
     tree = build_linkedin_sequence(["DM body"])
