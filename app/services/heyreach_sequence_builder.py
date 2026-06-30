@@ -71,7 +71,15 @@ def build_linkedin_sequence(
 ) -> dict:
     if not messages or len(messages) > 3:
         raise ValueError("LinkedIn sequence needs 1 to 3 messages")
-    note_text, _ = to_heyreach_message(connection_note) if connection_note.strip() else ("", "")
+    if connection_note.strip():
+        note_text, note_fallback = to_heyreach_message(connection_note)
+    else:
+        note_text = ""
+        note_fallback = ""
+    # CONNECTION_REQUEST requires non-empty messages list and non-empty fallback.
+    # Use a blank-note friendly default when no CR copy was provided.
+    cr_messages = [note_text] if note_text else ["Hi {FIRST_NAME}, I'd love to connect."]
+    cr_fallback = note_fallback if note_fallback else "Hi there, I'd love to connect."
     return {
         "nodeType": "CHECK_IS_CONNECTION",
         "actionDelay": 0,
@@ -85,7 +93,7 @@ def build_linkedin_sequence(
                 "nodeType": "CONNECTION_REQUEST",
                 "actionDelay": 3,
                 "actionDelayUnit": "HOUR",
-                "payload": {"messages": [note_text], "fallbackMessage": "", "toBeWithdrawnAfterDays": withdraw_days},
+                "payload": {"messages": cr_messages, "fallbackMessage": cr_fallback, "toBeWithdrawnAfterDays": withdraw_days},
                 "conditionalNode": _message_chain(messages, 0),
                 "unconditionalNode": {
                     **_like_post(2, "DAY"),

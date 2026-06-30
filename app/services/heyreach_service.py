@@ -22,7 +22,12 @@ class HeyReachService:
     async def post(self, endpoint: str, payload: dict) -> dict:
         async with httpx.AsyncClient(timeout=90) as client:
             response = await client.post(self.url(endpoint), json=payload, headers=self.headers)
-            response.raise_for_status()
+            if response.is_error:
+                raise httpx.HTTPStatusError(
+                    f"{response.status_code} {endpoint}: {response.text[:400]}",
+                    request=response.request,
+                    response=response,
+                )
             return response.json()
 
     async def get(self, endpoint: str, params: dict | None = None) -> dict:
