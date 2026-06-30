@@ -1,5 +1,4 @@
 import asyncio
-import json
 
 from app.services.heyreach_service import HeyReachService
 
@@ -51,12 +50,17 @@ def test_create_campaign_serializes_sequence_and_attaches_accounts():
         svc = RecordingHeyReach()
         seq = {"nodeType": "CHECK_IS_CONNECTION"}
         await svc.create_campaign("Camp", 732802, [101, 102], seq)
+        # First call: Create
         _, endpoint, payload = svc.calls[0]
         assert "campaign" in endpoint.lower()
         assert payload["name"] == "Camp"
         assert payload["linkedInUserListId"] == 732802
         assert payload["linkedInAccountIds"] == [101, 102]
-        assert json.loads(payload["sequenceJson"]) == seq
+        assert "sequenceJson" not in payload  # sequence sent via separate UpdateSequence call
+        # Second call: UpdateSequence
+        _, endpoint2, payload2 = svc.calls[1]
+        assert "UpdateSequence" in endpoint2
+        assert payload2["Sequence"] == seq
     asyncio.run(run())
 
 

@@ -1,5 +1,3 @@
-import json
-
 import httpx
 
 
@@ -61,8 +59,11 @@ class HeyReachService:
             "name": name,
             "linkedInUserListId": list_id,
             "linkedInAccountIds": account_ids,
-            "sequenceJson": json.dumps(sequence),
         }
         if schedule is not None:
             payload["schedule"] = schedule
-        return await self.post("campaign/Create", payload)
+        created = await self.post("campaign/Create", payload)
+        campaign_id = created.get("campaignId") or created.get("id")
+        if campaign_id and sequence:
+            await self.post("campaign/UpdateSequence", {"campaignId": campaign_id, "Sequence": sequence})
+        return created
