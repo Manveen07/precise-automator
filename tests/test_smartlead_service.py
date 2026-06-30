@@ -122,3 +122,22 @@ def test_campaign_url_points_to_email_campaign_overview():
     service = SmartleadService("secret")
     assert service.campaign_url(123) == "https://app.smartlead.ai/app/email-campaign/123/overview"
     assert service.headers["User-Agent"] == "Precise-Automator/1.0"
+
+
+def test_get_leads_hits_campaign_leads_endpoint():
+    async def run():
+        svc = RecordingSmartleadService()
+        out = await svc.get_leads(123, limit=50, offset=100)
+        assert ("get", "campaigns/123/leads", {"limit": 50, "offset": 100}) in svc.calls
+        assert out["ok"] is True
+
+    asyncio.run(run())
+
+
+def test_update_lead_posts_per_lead_endpoint_with_email_and_custom_fields():
+    async def run():
+        svc = RecordingSmartleadService()
+        await svc.update_lead(123, 5, "a@x.com", {"Step 1": "A<br><br>B"})
+        assert ("post", "campaigns/123/leads/5", {"email": "a@x.com", "custom_fields": {"Step 1": "A<br><br>B"}}) in svc.calls
+
+    asyncio.run(run())

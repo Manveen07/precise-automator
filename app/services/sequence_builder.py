@@ -82,8 +82,9 @@ def _expand_prose_paragraphs(body: str) -> str:
 
 
 def build_smartlead_sequences(plan_sequence: Sequence[dict]) -> list[dict]:
+    sequence = [step for step in plan_sequence if step.get("channel", "email") == "email"]
     sequences: list[dict] = []
-    for step in plan_sequence:
+    for step in sequence:
         seq_number = step["step_number"]
         variants = step["variants"]
         # Use a manual percentage split only when every variant has one and they sum to 100;

@@ -193,3 +193,19 @@ def test_build_sequences_ignores_partial_or_invalid_distribution():
     ]}]
     seqs = build_smartlead_sequences(plan)
     assert seqs[0]["variant_distribution_type"] == "MANUAL_EQUAL"
+
+
+def test_build_smartlead_sequences_skips_linkedin_steps():
+    sequence = [
+        {"step_number": 1, "channel": "email", "delay_days": 0,
+         "variants": [{"variant_label": "A", "subject": "Sub", "body": "Email body."}]},
+        {"step_number": 2, "channel": "linkedin", "delay_days": 0,
+         "linkedin_subtype": "dm", "variants": [{"variant_label": "A", "body": "DM body."}]},
+        {"step_number": 3, "channel": "email", "delay_days": 3,
+         "variants": [{"variant_label": "A", "subject": "FU", "body": "Follow-up."}]},
+    ]
+    result = build_smartlead_sequences(sequence)
+    # Only email steps should produce Smartlead sequences
+    assert len(result) == 2
+    seq_numbers = [s.get("seq_number") or s.get("step_number") for s in result]
+    assert 2 not in seq_numbers  # LinkedIn step excluded

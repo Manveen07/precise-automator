@@ -20,7 +20,7 @@ import re
 from anthropic import AnthropicError
 
 _log = logging.getLogger("app.routes.campaigns")
-from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, Request, Response, UploadFile
 import httpx
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -31,11 +31,12 @@ from app.config import (
     get_workspace_config,
     infer_smartlead_client,
     settings,
+    static_asset_version,
 )
 from app.services.anthropic_service import AnthropicCampaignService
 from app.services.inbox_selection_service import select_inboxes
 from app.services.inbox_sheet_service import InboxSheetError, fetch_inbox_rows, fetch_last_sync
-from app.services.local_plan_service import build_campaign_plan_from_input
+from app.services.local_plan_service import build_campaign_plan_from_input, build_twin_campaign_plan
 from app.services.parser_service import parse_messaging_file
 from app.services.sequence_builder import smartlead_html_to_text
 from app.services.smartlead_import_service import build_campaign_plan_from_smartlead
@@ -43,12 +44,16 @@ from app.services.smartlead_service import SmartleadService
 from app.services.spintax_service import apply_spintax_to_plan, count_bodies_needing_spintax
 from app.services.validation_service import validate_campaign_plan
 from app import store
-from app.workers.sync_campaign import sync_campaign_now
+from app.schemas.campaign_plan import linkedin_messages
+from app.workers.heyreach_create import create_heyreach_campaign_now
+from app.workers.sync_campaign import _has_heyreach_attempt, sync_campaign_now
+from app.workers.twin_fix import run_twin_fix_now
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 # Render Smartlead email bodies (HTML with <br> + spintax) as readable plain text.
 templates.env.filters["smartlead_text"] = smartlead_html_to_text
+templates.env.globals["asset_version"] = static_asset_version()
 
 
 # ----- Pages ----- #
@@ -91,6 +96,10 @@ def campaign_status(campaign_id: str) -> dict:
         "status_label": _status_label(doc.get("status", "drafting")),
         "smartlead_campaign_id": doc.get("smartlead_campaign_id"),
         "last_sync_error": doc.get("last_sync_error"),
+        "twin_fix_running": doc.get("twin_fix_running", False),
+        "heyreach_creating": doc.get("heyreach_creating", False),
+        "heyreach_campaign_url": doc.get("heyreach_campaign_url"),
+        "has_linkedin_steps": bool(linkedin_messages(doc.get("current_plan") or {})),
         "updated_at": store.to_display_tz(doc.get("updated_at")).isoformat() if doc.get("updated_at") else None,
     }
 
@@ -106,6 +115,7 @@ async def create_campaign(
     smartlead_campaign_ref: str = Form(""),
     messaging_text: str = Form(""),
     selected_sequence_name: str = Form(""),
+    is_twin: bool = Form(False),
     messaging_file: UploadFile | None = File(None),
 ) -> RedirectResponse:
     workspace = get_workspace_config(workspace_key)
@@ -143,7 +153,11 @@ async def create_campaign(
         "messaging_text": final_text,
         "parsed_messaging": parsed_messaging,
     }
-    if imported_plan:
+    if is_twin:
+        plan = build_twin_campaign_plan(raw_input)
+        errors = validate_campaign_plan(plan, _active_workspace_keys())
+        status = None
+    elif imported_plan:
         plan = imported_plan
         errors = validate_campaign_plan(plan, _active_workspace_keys())
         status = None
@@ -169,6 +183,8 @@ async def create_campaign(
         smartlead_client_name=smartlead_client["name"] if smartlead_client else None,
         smartlead_client_match=smartlead_client["matched_alias"] if smartlead_client else None,
         status=status,
+        is_twin=is_twin,
+        twin_smartlead_url=None,
     )
     return RedirectResponse(f"/campaigns/{doc['_id']}", status_code=303)
 
@@ -508,6 +524,77 @@ def link_existing_smartlead_campaign(
     return _redirect_to_detail(request, campaign_id, {"ok": True, "smartlead_campaign_id": smartlead_id})
 
 
+@router.post("/api/campaigns/{campaign_id}/twin")
+def mark_twin(
+    campaign_id: str,
+    request: Request,
+    is_twin: bool = Form(False),
+    twin_smartlead_url: str = Form(""),
+) -> dict:
+    _require_campaign(campaign_id)
+    url = twin_smartlead_url.strip() or None
+    if url and _extract_smartlead_campaign_id(url) is None:
+        raise HTTPException(status_code=400, detail="Paste a valid Smartlead campaign URL or numeric ID")
+    store.set_twin(campaign_id, is_twin, url)
+    return _redirect_to_detail(request, campaign_id, {"ok": True, "is_twin": is_twin})
+
+
+@router.post("/api/campaigns/{campaign_id}/linkedin-messages")
+async def save_linkedin_messages(
+    campaign_id: str, request: Request
+) -> Response:
+    doc = _require_campaign(campaign_id)
+    form = await request.form()
+    raw_messages = form.getlist("messages")
+    plan = doc.get("current_plan") or {}
+    bodies = [m.strip() for m in raw_messages if m and m.strip()][:3]
+    email_steps = [s for s in (plan.get("sequence") or []) if s.get("channel") != "linkedin"]
+    base = max([s.get("step_number", 0) for s in email_steps], default=0)
+    linkedin_steps = [
+        {
+            "step_number": base + i + 1,
+            "delay_days": 0,
+            "channel": "linkedin",
+            "variants": [{"variant_label": "A", "subject": "", "body": body}],
+        }
+        for i, body in enumerate(bodies)
+    ]
+    plan["sequence"] = email_steps + linkedin_steps
+    errors = validate_campaign_plan(plan, _active_workspace_keys())
+    store.update_plan(campaign_id, plan, errors)
+    return _redirect_to_detail(request, campaign_id, {"ok": True})
+
+
+@router.post("/api/campaigns/{campaign_id}/heyreach-create")
+def heyreach_create_route(
+    campaign_id: str, request: Request, background_tasks: BackgroundTasks
+) -> Response:
+    doc = _require_campaign(campaign_id)
+    if not linkedin_messages(doc.get("current_plan") or {}):
+        raise HTTPException(status_code=400, detail="No LinkedIn steps. Add LinkedIn messages first.")
+    if _has_heyreach_attempt(doc):
+        return _redirect_to_detail(request, campaign_id, {"ok": True, "queued": False})
+    store.set_heyreach_creating(campaign_id, True)
+    background_tasks.add_task(create_heyreach_campaign_now, campaign_id)
+    return _redirect_to_detail(request, campaign_id, {"ok": True, "queued": True})
+
+
+@router.post("/api/campaigns/{campaign_id}/twin-fix")
+def twin_fix(
+    campaign_id: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    twin_smartlead_url: str = Form(""),
+) -> dict:
+    doc = _require_campaign(campaign_id)
+    if not doc.get("is_twin"):
+        raise HTTPException(status_code=400, detail="Not a twin campaign. Mark it as twin first.")
+    url = twin_smartlead_url.strip() or None
+    store.set_twin_fix_running(campaign_id, True)
+    background_tasks.add_task(run_twin_fix_now, campaign_id, url)
+    return _redirect_to_detail(request, campaign_id, {"ok": True, "queued": True})
+
+
 @router.post("/api/campaigns/{campaign_id}/local-delete")
 def delete_local_campaign(campaign_id: str, request: Request):
     _require_campaign(campaign_id)
@@ -841,6 +928,17 @@ def _detail_payload(doc: dict) -> dict:
         "has_local_plan": has_local_plan,
         "validation_errors": doc.get("validation_errors") or [],
         "smartlead_campaign_id": doc.get("smartlead_campaign_id"),
+        "is_twin": doc.get("is_twin", False),
+        "twin_smartlead_url": doc.get("twin_smartlead_url"),
+        "twin_last_fix": doc.get("twin_last_fix"),
+        "twin_fix_running": doc.get("twin_fix_running", False),
+        "heyreach_campaign_id": doc.get("heyreach_campaign_id"),
+        "heyreach_campaign_url": doc.get("heyreach_campaign_url"),
+        "heyreach_status": doc.get("heyreach_status"),
+        "heyreach_creating": doc.get("heyreach_creating", False),
+        "heyreach_last_error": doc.get("heyreach_last_error"),
+        "linkedin_messages": linkedin_messages(doc.get("current_plan") or {}),
+        "has_linkedin_steps": bool(linkedin_messages(doc.get("current_plan") or {})),
         "last_sync_error": doc.get("last_sync_error"),
         "spintax_status": spintax_status,
         "synced_at": store.to_display_tz(doc.get("synced_at")),

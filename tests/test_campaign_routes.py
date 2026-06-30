@@ -1161,3 +1161,159 @@ def test_variant_distribution_rejects_count_mismatch(client):
         data={"step_number": "1", "percentages": ["100"]},
     )
     assert response.status_code == 400
+
+
+def test_create_twin_campaign_injects_fixed_sequence(client):
+    resp = client.post(
+        "/api/campaigns/new",
+        data={"workspace_key": "darlean", "campaign_name": "Events - Twain", "is_twin": "true"},
+    )
+    assert resp.status_code == 303
+    cid = resp.headers["location"].rsplit("/", 1)[-1]
+    from app import store
+    doc = store.get_campaign(cid)
+    assert doc["is_twin"] is True
+    seq = doc["current_plan"]["sequence"]
+    assert seq[0]["variants"][0]["subject"] == "{{Subject 1}}"
+    assert "{{Step 3}}" in seq[1]["variants"][0]["body"]
+
+
+def test_mark_as_twin_persists_flag_and_url(client):
+    resp = client.post(
+        "/api/campaigns/new",
+        data={"workspace_key": "darlean", "campaign_name": "Plain"},
+    )
+    cid = resp.headers["location"].rsplit("/", 1)[-1]
+    url = "https://app.smartlead.ai/app/email-campaign/777/overview"
+    r2 = client.post(f"/api/campaigns/{cid}/twin", data={"is_twin": "true", "twin_smartlead_url": url})
+    assert r2.status_code in (200, 303)
+    from app import store
+    doc = store.get_campaign(cid)
+    assert doc["is_twin"] is True
+    assert "777" in doc["twin_smartlead_url"]
+
+
+def test_twin_fix_rejected_for_non_twin(client):
+    resp = client.post("/api/campaigns/new", data={"workspace_key": "darlean", "campaign_name": "Plain"})
+    cid = resp.headers["location"].rsplit("/", 1)[-1]
+    r = client.post(f"/api/campaigns/{cid}/twin-fix", data={})
+    assert r.status_code == 400
+
+
+def test_twin_fix_schedules_background_task(client, monkeypatch):
+    import app.routes.campaigns as routes
+    calls = {}
+    monkeypatch.setattr(routes, "run_twin_fix_now", lambda cid, url=None: calls.setdefault("args", (cid, url)))
+    resp = client.post(
+        "/api/campaigns/new",
+        data={"workspace_key": "darlean", "campaign_name": "Events - Twain", "is_twin": "true"},
+    )
+    cid = resp.headers["location"].rsplit("/", 1)[-1]
+    r = client.post(f"/api/campaigns/{cid}/twin-fix", data={"twin_smartlead_url": ""})
+    assert r.status_code in (200, 303)
+    assert calls["args"][0] == cid
+    # The route flags the campaign as running so the UI can show progress.
+    status = client.get(f"/api/campaigns/{cid}/status").json()
+    assert status["twin_fix_running"] is True
+
+
+def test_detail_renders_when_raw_input_missing_parsed_messaging(client):
+    """A twin campaign with an empty raw_input must still render (no 500)."""
+    plan = {
+        "sequence": [{"step_number": 1, "delay_days": 0,
+                      "variants": [{"variant_label": "A", "subject": "{{Subject 1}}", "body": "x"}]}],
+        "schedule": {"max_new_leads_per_day": 100, "start_hour": "09:00",
+                     "end_hour": "18:00", "timezone": "America/New_York"},
+    }
+    doc = store.insert_campaign(
+        workspace_key="darlean", campaign_name="T", raw_input={}, plan=plan,
+        validation_errors=[], is_twin=True, smartlead_campaign_id=999,
+    )
+    r = client.get(f"/campaigns/{str(doc['_id'])}")
+    assert r.status_code == 200
+    assert ">Twain<" in r.text
+
+
+def test_save_linkedin_messages_sets_channel_steps(client):
+    resp = client.post("/api/campaigns/new", data={"workspace_key": "darlean", "campaign_name": "LI"})
+    cid = resp.headers["location"].rsplit("/", 1)[-1]
+    # Send multi-value form field as explicit urlencoded body (httpx list-in-dict is unreliable)
+    import urllib.parse
+    body = urllib.parse.urlencode([("messages", "Hi {{first_name}}"), ("messages", "Follow up")])
+    r = client.post(
+        f"/api/campaigns/{cid}/linkedin-messages",
+        content=body,
+        headers={"content-type": "application/x-www-form-urlencoded"},
+    )
+    assert r.status_code in (200, 303)
+    from app.schemas.campaign_plan import linkedin_messages
+    from app import store
+    plan = store.get_campaign(cid)["current_plan"]
+    assert linkedin_messages(plan) == ["Hi {{first_name}}", "Follow up"]
+
+
+def test_heyreach_create_rejected_without_linkedin_steps(client):
+    resp = client.post("/api/campaigns/new", data={"workspace_key": "darlean", "campaign_name": "Email only",
+                       "messaging_text": "Subject Line Options:\n1. T\n\nEmail 1\nV1\nBody"})
+    cid = resp.headers["location"].rsplit("/", 1)[-1]
+    r = client.post(f"/api/campaigns/{cid}/heyreach-create", data={})
+    assert r.status_code == 400
+
+
+def test_heyreach_create_schedules_and_flags(client, monkeypatch):
+    import app.routes.campaigns as routes
+    calls = {}
+    monkeypatch.setattr(routes, "create_heyreach_campaign_now", lambda cid: calls.setdefault("cid", cid))
+    resp = client.post("/api/campaigns/new", data={"workspace_key": "darlean", "campaign_name": "LI"})
+    cid = resp.headers["location"].rsplit("/", 1)[-1]
+    import urllib.parse
+    body = urllib.parse.urlencode([("messages", "Hi")])
+    client.post(f"/api/campaigns/{cid}/linkedin-messages", content=body,
+                headers={"content-type": "application/x-www-form-urlencoded"})
+    r = client.post(f"/api/campaigns/{cid}/heyreach-create", data={})
+    assert r.status_code in (200, 303)
+    assert calls["cid"] == cid
+    assert client.get(f"/api/campaigns/{cid}/status").json()["heyreach_creating"] is True
+
+
+@pytest.fixture
+def sample_campaign_doc():
+    """A campaign with a minimal email sequence (no LinkedIn steps)."""
+    return store.insert_campaign(
+        workspace_key="preciselead",
+        campaign_name="Sample Campaign",
+        raw_input={"workspace_key": "preciselead", "campaign_name": "Sample Campaign", "parsed_messaging": {}},
+        plan={
+            "workspace_key": "preciselead",
+            "campaign_name": "Sample Campaign",
+            "template_family": "cold_email_standard_v1",
+            "schedule": {"max_new_leads_per_day": 50, "start_hour": "09:00", "end_hour": "18:00", "timezone": "America/New_York"},
+            "settings": {"send_as_plain_text": True, "track_opens": False, "track_clicks": False, "stop_on_reply": True,
+                         "enable_ai_esp_matching": True, "auto_pause_domain_leads_on_reply": True, "ooo_restart_delay_days": 10},
+            "inbox_selection": {"mode": "skip", "email_account_ids": []},
+            "sequence": [
+                {"step_number": 1, "delay_days": 0, "variants": [{"variant_label": "A", "subject": "Hi", "body": "Body"}]},
+            ],
+            "approval_required": False,
+            "notes_for_operator": [],
+        },
+        validation_errors=[],
+    )
+
+
+def test_campaign_status_includes_has_linkedin_steps(client, sample_campaign_doc):
+    """Status endpoint reports has_linkedin_steps=True when plan has LinkedIn steps."""
+    # Insert campaign with LinkedIn steps in plan
+    from app import store as app_store
+    plan_with_li = dict(sample_campaign_doc.get("current_plan") or {})
+    plan_with_li["sequence"] = plan_with_li.get("sequence", []) + [{
+        "step_number": 99, "channel": "linkedin", "delay_days": 0,
+        "linkedin_subtype": "dm", "variants": [{"body": "DM body"}]
+    }]
+    campaign_id = str(sample_campaign_doc["_id"])
+    app_store.update_plan(campaign_id, plan_with_li, [])
+
+    resp = client.get(f"/api/campaigns/{campaign_id}/status")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["has_linkedin_steps"] is True

@@ -22,6 +22,7 @@ import re
 import httpx
 
 from app.config import get_workspace_config, infer_smartlead_client
+from app.schemas.campaign_plan import linkedin_messages
 from app.services.sequence_builder import (
     build_smartlead_sequences,
     format_email_body_for_smartlead,
@@ -29,7 +30,9 @@ from app.services.sequence_builder import (
     smartlead_html_to_text,
 )
 from app.services.smartlead_service import SmartleadService
+from app.services.twain_service import audit_twain_field
 from app.services.validation_service import validate_campaign_plan
+from app.workers.heyreach_create import _create_async
 from app import store
 
 
@@ -99,21 +102,79 @@ async def _sync_campaign_async(campaign_id: str) -> None:
 
         sequences = build_smartlead_sequences(plan["sequence"])
         await smartlead.update_sequences(smartlead_id, sequences)
-        await _verify_smartlead_sequence_sync(smartlead, smartlead_id, plan["sequence"])
+        email_sequence = [s for s in plan["sequence"] if s.get("channel", "email") == "email"]
+        await _verify_smartlead_sequence_sync(smartlead, smartlead_id, email_sequence)
+
+        if doc.get("is_twin"):
+            verify_response = await smartlead.get_sequences(smartlead_id)
+            _assert_twin_join_intact(_smartlead_sequence_list(verify_response))
 
         email_account_ids = plan.get("inbox_selection", {}).get("email_account_ids") or []
         if email_account_ids:
             await smartlead.attach_email_accounts(smartlead_id, email_account_ids)
 
         store.attach_smartlead(campaign_id, smartlead_id)
+        await _maybe_create_heyreach(campaign_id, plan)
     except Exception as exc:
         store.mark_sync_failed(campaign_id, _error_text(exc))
+
+
+async def _maybe_create_heyreach(campaign_id: str, plan: dict) -> None:
+    """If the plan has LinkedIn steps, run HeyReach campaign creation inline.
+
+    Errors here do NOT propagate — Smartlead sync is already complete.
+    HeyReach errors are stored via save_heyreach_result.
+    """
+    messages = linkedin_messages(plan)
+    if not messages:
+        return
+    # Skip if a HeyReach campaign already exists for this campaign doc
+    doc = store.get_campaign(campaign_id)
+    if doc and _has_heyreach_attempt(doc):
+        return
+    store.set_heyreach_creating(campaign_id, True)
+    try:
+        await _create_async(campaign_id)
+    except Exception as exc:
+        store.save_heyreach_result(
+            campaign_id,
+            campaign_id_value=None,
+            url=None,
+            status="failed",
+            error=_error_text(exc),
+        )
+
+
+def _has_heyreach_attempt(doc: dict) -> bool:
+    return bool(
+        doc.get("heyreach_campaign_id")
+        or doc.get("heyreach_campaign_url")
+        or doc.get("heyreach_creating")
+        or doc.get("heyreach_status")
+        or doc.get("heyreach_last_error")
+    )
 
 
 def _active_workspace_keys() -> set[str]:
     from app.config import SMARTLEAD_WORKSPACES
 
     return {w["key"] for w in SMARTLEAD_WORKSPACES}
+
+
+def _assert_twin_join_intact(smartlead_sequences: list[dict]) -> None:
+    """Hard-fail if a twin Step 1 body has reverted to a lone <br> join.
+
+    Soft logging is insufficient — this join has silently reverted before and
+    was only caught by a screenshot.
+    """
+    for step in smartlead_sequences:
+        if int(step.get("seq_number") or step.get("step_number") or 0) != 1:
+            continue
+        variants = step.get("seq_variants") or step.get("sequence_variants") or [step]
+        for variant in variants:
+            body = variant.get("email_body") or step.get("email_body") or ""
+            if "lone_br" in audit_twain_field(body):
+                raise RuntimeError("Twin Step 1 join reverted to a lone <br> after sync (expected <br><br>)")
 
 
 async def _verify_smartlead_sequence_sync(

@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% block title %}{{ campaign.campaign_name }} - Precise Automator{% endblock %}
 {% block content %}
+{% set _raw = campaign.raw_input or {} %}
+{% set _pm = _raw.get('parsed_messaging') or {} %}
 <a class="back-link" href="/app"><span aria-hidden="true">&#8592;</span> Back to campaigns</a>
 
 <div class="detail-header">
@@ -8,7 +10,8 @@
     <h1>{{ campaign.campaign_name }}</h1>
     <div class="detail-subline">
       <span class="badge status-{{ campaign.status }}">{{ campaign.status_label }}</span>
-      <span class="muted">Workspace {{ campaign.workspace_name }}{% if campaign.raw_input.parsed_messaging.selected_campaign %} · {{ campaign.raw_input.parsed_messaging.selected_campaign }}{% endif %}</span>
+      {% if campaign.is_twin %}<span class="badge status-synced">Twain</span>{% endif %}
+      <span class="muted">Workspace {{ campaign.workspace_name }}{% if _pm.get('selected_campaign') %} · {{ _pm.get('selected_campaign') }}{% endif %}</span>
     </div>
   </div>
   <div class="detail-actions">
@@ -41,6 +44,48 @@
     <strong>Last sync failed</strong>
     <p>{{ campaign.last_sync_error }}</p>
   </div>
+</div>
+{% endif %}
+
+{% if campaign.is_twin %}
+<section class="detail-card twin-panel">
+  <div class="card-head"><h2 class="card-title">Twain</h2></div>
+  <p class="card-lead">Twain campaign — bodies are Twain-personalized per-lead fields. Run the fix after leads are pushed.</p>
+  {% if campaign.twin_fix_running %}
+  <div class="twin-fix-running" role="status">
+    <span class="twin-spinner" aria-hidden="true"></span>
+    <span>Fixing spacing in the background… large campaigns take a few minutes. Keep this page open — it refreshes when done.</span>
+  </div>
+  {% else %}
+  <form method="post" action="/api/campaigns/{{ campaign.id }}/twin-fix" class="js-single-submit twin-fix-form">
+    <input class="input" name="twin_smartlead_url" placeholder="Smartlead campaign URL (optional — overrides the linked id)" value="{{ campaign.twin_smartlead_url or '' }}">
+    <button type="submit" class="button">Fix Twain spacing</button>
+  </form>
+  {% endif %}
+  {% if campaign.twin_last_fix %}
+  <div class="twin-fix-summary">
+    <p>Last fix: <strong>{{ campaign.twin_last_fix.leads_changed }}</strong> of {{ campaign.twin_last_fix.total_leads }} leads changed.</p>
+    {% if campaign.twin_last_fix.template_repushed %}<p>Template join repaired and repushed.</p>{% endif %}
+    {% if campaign.twin_last_fix.greeting_flags %}<p>Greeting flags: {{ campaign.twin_last_fix.greeting_flags | length }}.</p>{% endif %}
+    {% if campaign.twin_last_fix.errors %}<p class="muted">Errors: {{ campaign.twin_last_fix.errors | length }}.</p>{% endif %}
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if campaign.has_linkedin_steps %}
+<div id="heyreach-status-block" class="heyreach-status-row">
+  {% if campaign.heyreach_creating %}
+    <span class="spinner"></span> Creating HeyReach campaign&hellip;
+  {% elif campaign.heyreach_campaign_url %}
+    <span class="status-ok">HeyReach campaign created (DRAFT)</span>
+    &mdash; <a href="{{ campaign.heyreach_campaign_url }}" target="_blank" rel="noopener">Open in HeyReach</a>
+    &mdash; add leads and start it there.
+  {% elif campaign.heyreach_last_error %}
+    <span class="status-error">HeyReach failed:</span> {{ campaign.heyreach_last_error }}
+  {% else %}
+    <span class="status-muted">LinkedIn steps detected &mdash; HeyReach campaign will be created on sync.</span>
+  {% endif %}
 </div>
 {% endif %}
 
@@ -97,16 +142,19 @@
       </div>
 
       <div class="timeline">
-        {% for step in campaign.plan.sequence %}
+        {% set email_steps = campaign.plan.sequence | rejectattr("channel", "equalto", "linkedin") | list %}
+        {% set linkedin_steps = campaign.plan.sequence | selectattr("channel", "equalto", "linkedin") | list %}
+        {% for step in email_steps %}
+        {% set email_loop = loop %}
         <div class="timeline-item">
-          {% if step.step_number > 1 %}
+          {% if not loop.first %}
           <div class="delay-separator">
             <span class="delay-line" aria-hidden="true"></span>
             <span class="delay-arrow" aria-hidden="true">&#8595;</span>
             <form method="post" action="/api/campaigns/{{ campaign.id }}/delay" class="delay-form">
               <input type="hidden" name="step_number" value="{{ step.step_number }}">
               <span>Wait</span>
-              <input name="delay_days" type="number" min="1" max="30" value="{{ step.delay_days }}" aria-label="Delay for Email {{ step.step_number }} in days">
+              <input name="delay_days" type="number" min="1" max="30" value="{{ step.delay_days }}" aria-label="Delay for Email {{ loop.index }} in days">
               <span>day{% if step.delay_days != 1 %}s{% endif %} before sending</span>
               <button type="submit" class="button secondary small">Save</button>
             </form>
@@ -115,9 +163,9 @@
           <article class="step-card">
             <header class="step-head">
               <div class="step-head-left">
-                <span class="step-num">{{ step.step_number }}</span>
-                <strong>Email {{ step.step_number }}</strong>
-                {% if step.step_number == 1 %}<span class="muted step-timing">Sends immediately</span>{% endif %}
+                <span class="step-num">{{ loop.index }}</span>
+                <strong>Email {{ loop.index }}</strong>
+                {% if loop.first %}<span class="muted step-timing">Sends immediately</span>{% endif %}
               </div>
               {% if step.variants | length > 1 %}
               <div class="variant-tabs" role="tablist">
@@ -151,7 +199,7 @@
                         data-action="/api/campaigns/{{ campaign.id }}/variant-distribution" hidden>Save split</button>
               </div>
               {% endif %}
-              {% if step.step_number == 1 %}
+              {% if email_loop.first %}
               <div class="step-subject">
                 <span class="eyebrow">Subject · {{ variant.variant_label }}</span>
                 <div class="step-subject-text js-subject-view">{{ variant.subject }}</div>
@@ -176,6 +224,30 @@
           </article>
         </div>
         {% endfor %}
+        {% if linkedin_steps %}
+        <div class="timeline-item linkedin-steps-summary">
+          <div class="delay-separator">
+            <span class="delay-line" aria-hidden="true"></span>
+          </div>
+          <article class="step-card linkedin-card">
+            <header class="step-head">
+              <div class="step-head-left">
+                <span class="step-num li-icon">in</span>
+                <strong>LinkedIn Sequence ({{ linkedin_steps | length }} step{% if linkedin_steps | length != 1 %}s{% endif %})</strong>
+                <span class="muted step-timing">Runs in HeyReach in parallel</span>
+              </div>
+            </header>
+            <div class="step-body">
+              {% for step in linkedin_steps %}
+              <div class="li-step-row">
+                <span class="li-step-label">{% if step.linkedin_subtype == "connection_request" %}Connection Request{% else %}DM {{ loop.index - (1 if linkedin_steps[0].linkedin_subtype == "connection_request" else 0) }}{% endif %}</span>
+                <span class="li-step-preview muted">{{ (step.variants[0].body if step.variants else "") | truncate(80) }}</span>
+              </div>
+              {% endfor %}
+            </div>
+          </article>
+        </div>
+        {% endif %}
       </div>
 
       <details class="clean-details raw-json">
@@ -213,18 +285,18 @@
       </form>
     </section>
 
-    {% if campaign.raw_input.messaging_text %}
+    {% if _raw.get('messaging_text') %}
     <section class="detail-card">
       <h2 class="card-title">Parsed messaging</h2>
-      {% if campaign.raw_input.parsed_messaging.warnings %}
+      {% if _pm.get('warnings') %}
       <div class="notice warning">
         <strong>Parser warnings — check your source file:</strong>
-        {% for w in campaign.raw_input.parsed_messaging.warnings %}<p>{{ w }}</p>{% endfor %}
+        {% for w in _pm.get('warnings') %}<p>{{ w }}</p>{% endfor %}
       </div>
       {% endif %}
       <details class="clean-details">
         <summary>View parser output</summary>
-        <pre>{{ campaign.raw_input.parsed_messaging | tojson(indent=2) }}</pre>
+        <pre>{{ _pm | tojson(indent=2) }}</pre>
       </details>
     </section>
     {% endif %}
@@ -257,6 +329,18 @@
         <a class="button secondary" href="/api/campaigns/{{ campaign.id }}/smartlead">Inspect</a>
         <a class="button secondary" href="/api/campaigns/{{ campaign.id }}/analytics">Analytics</a>
       </div>
+    </section>
+    {% endif %}
+
+    {% if not campaign.is_twin and campaign.smartlead_campaign_id %}
+    <section class="detail-card sidebar-card">
+      <h3 class="sidebar-title">Twain</h3>
+      <p class="card-lead">Mark as a Twain-personalized campaign to enable the spacing fix.</p>
+      <form method="post" action="/api/campaigns/{{ campaign.id }}/twin" class="js-single-submit">
+        <input type="hidden" name="is_twin" value="true">
+        <input class="input" name="twin_smartlead_url" placeholder="Smartlead URL (optional)">
+        <button type="submit" class="button secondary full-width">Mark as Twain</button>
+      </form>
     </section>
     {% endif %}
 
@@ -516,6 +600,48 @@
       if (attempts < 60) window.setTimeout(poll, 3000);
     };
     window.setTimeout(poll, 1500);
+  })();
+</script>
+{% endif %}
+{% if campaign.is_twin and campaign.twin_fix_running %}
+<script>
+  (() => {
+    const statusUrl = "/api/campaigns/{{ campaign.id }}/status";
+    let attempts = 0;
+    const poll = async () => {
+      attempts += 1;
+      try {
+        const response = await fetch(statusUrl, { headers: { Accept: "application/json" } });
+        if (response.ok) {
+          const payload = await response.json();
+          if (!payload.twin_fix_running) { window.location.reload(); return; }
+        }
+      } catch (_) {
+        // transient failure — keep polling
+      }
+      if (attempts < 200) window.setTimeout(poll, 3000);  // ~10 min cap
+    };
+    window.setTimeout(poll, 2000);
+  })();
+</script>
+{% endif %}
+{% if campaign.heyreach_creating %}
+<script>
+  (() => {
+    const statusUrl = "/api/campaigns/{{ campaign.id }}/status";
+    let attempts = 0;
+    const poll = async () => {
+      attempts += 1;
+      try {
+        const r = await fetch(statusUrl, { headers: { Accept: "application/json" } });
+        if (r.ok) {
+          const p = await r.json();
+          if (!p.heyreach_creating) { window.location.reload(); return; }
+        }
+      } catch (_) {}
+      if (attempts < 120) window.setTimeout(poll, 3000);  // ~6 min cap
+    };
+    window.setTimeout(poll, 2000);
   })();
 </script>
 {% endif %}

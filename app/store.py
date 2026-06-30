@@ -84,6 +84,8 @@ def insert_campaign(
     smartlead_client_match: str | None = None,
     status: str | None = None,
     created_by: str | None = None,
+    is_twin: bool = False,
+    twin_smartlead_url: str | None = None,
 ) -> dict:
     now = now_utc()
     status = status or ("drafting" if validation_errors else "ready")
@@ -100,6 +102,15 @@ def insert_campaign(
         "status": status,
         "last_sync_error": None,
         "created_by": created_by,
+        "is_twin": is_twin,
+        "twin_smartlead_url": twin_smartlead_url,
+        "twin_last_fix": None,
+        "twin_fix_running": False,
+        "heyreach_campaign_id": None,
+        "heyreach_campaign_url": None,
+        "heyreach_status": None,
+        "heyreach_creating": False,
+        "heyreach_last_error": None,
         "created_at": now,
         "updated_at": now,
     }
@@ -163,6 +174,77 @@ def mark_sync_failed(campaign_id: str, error_text: str) -> dict | None:
             "$set": {
                 "status": "failed",
                 "last_sync_error": error_text,
+                "updated_at": now_utc(),
+            }
+        },
+        return_document=True,
+    )
+
+
+def set_twin(campaign_id: str, is_twin: bool, twin_smartlead_url: str | None) -> dict | None:
+    oid = to_object_id(campaign_id)
+    if not oid:
+        return None
+    return campaigns_collection().find_one_and_update(
+        {"_id": oid},
+        {"$set": {"is_twin": is_twin, "twin_smartlead_url": twin_smartlead_url, "updated_at": now_utc()}},
+        return_document=True,
+    )
+
+
+def save_twin_fix(campaign_id: str, summary: dict) -> dict | None:
+    oid = to_object_id(campaign_id)
+    if not oid:
+        return None
+    return campaigns_collection().find_one_and_update(
+        {"_id": oid},
+        {"$set": {"twin_last_fix": summary, "twin_fix_running": False, "updated_at": now_utc()}},
+        return_document=True,
+    )
+
+
+def set_twin_fix_running(campaign_id: str, running: bool) -> dict | None:
+    oid = to_object_id(campaign_id)
+    if not oid:
+        return None
+    return campaigns_collection().find_one_and_update(
+        {"_id": oid},
+        {"$set": {"twin_fix_running": running, "updated_at": now_utc()}},
+        return_document=True,
+    )
+
+
+def set_heyreach_creating(campaign_id: str, creating: bool) -> dict | None:
+    oid = to_object_id(campaign_id)
+    if not oid:
+        return None
+    return campaigns_collection().find_one_and_update(
+        {"_id": oid},
+        {"$set": {"heyreach_creating": creating, "updated_at": now_utc()}},
+        return_document=True,
+    )
+
+
+def save_heyreach_result(
+    campaign_id: str,
+    *,
+    campaign_id_value: int | None,
+    url: str | None,
+    status: str,
+    error: str | None = None,
+) -> dict | None:
+    oid = to_object_id(campaign_id)
+    if not oid:
+        return None
+    return campaigns_collection().find_one_and_update(
+        {"_id": oid},
+        {
+            "$set": {
+                "heyreach_campaign_id": campaign_id_value,
+                "heyreach_campaign_url": url,
+                "heyreach_status": status,
+                "heyreach_last_error": error,
+                "heyreach_creating": False,
                 "updated_at": now_utc(),
             }
         },

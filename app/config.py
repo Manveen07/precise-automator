@@ -1,4 +1,5 @@
 from functools import lru_cache
+import json
 import os
 from pathlib import Path
 import re
@@ -8,11 +9,20 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from dotenv import dotenv_values
 
 
+def static_asset_version() -> int:
+    """Mtime of the stylesheet, used to cache-bust /static/styles.css in templates."""
+    try:
+        return int(os.path.getmtime("app/static/styles.css"))
+    except OSError:
+        return 0
+
+
 SMARTLEAD_WORKSPACES = [
     {
         "key": "preciselead",
         "name": "PreciseLead",
         "api_key_env": "SMARTLEAD_PRECISELEAD_API_KEY",
+        "heyreach_api_key_env": "HEYREACH_PRECISELEAD_API_KEY",
         "self_client_name": "PreciseLeads",
         # Value of the "Client" column in the inbox sheet for this workspace.
         "sheet_client": "PRECISE_LEADS",
@@ -21,18 +31,21 @@ SMARTLEAD_WORKSPACES = [
         "key": "belardi_wong",
         "name": "Belardi Wong",
         "api_key_env": "SMARTLEAD_BELARDI_WONG_API_KEY",
+        "heyreach_api_key_env": "HEYREACH_BELARDI_WONG_API_KEY",
         "sheet_client": "Belardi Wong",
     },
     {
         "key": "darlean",
         "name": "Darlean",
         "api_key_env": "SMARTLEAD_DARLEAN_API_KEY",
+        "heyreach_api_key_env": "HEYREACH_DARLEAN_API_KEY",
         "sheet_client": "DARLEAN",
     },
     {
         "key": "mythic",
         "name": "Mythic",
         "api_key_env": "SMARTLEAD_MYTHIC_API_KEY",
+        "heyreach_api_key_env": "HEYREACH_MYTHIC_API_KEY",
         "sheet_client": "Mythic",
     },
 ]
@@ -146,11 +159,14 @@ def get_workspace_config(workspace_key: str) -> dict | None:
         if workspace["key"] != workspace_key:
             continue
         api_key = get_secret_value(workspace["api_key_env"])
+        heyreach_env = workspace.get("heyreach_api_key_env")
+        heyreach_api_key = get_secret_value(heyreach_env) if heyreach_env else None
         return {
             "key": workspace["key"],
             "name": workspace["name"],
             "api_key": api_key,
             "self_client_name": workspace.get("self_client_name") or workspace["name"],
+            "heyreach_api_key": heyreach_api_key,
         }
     return None
 
@@ -205,3 +221,27 @@ def _client_alias_matches(campaign_name: str, alias: str) -> bool:
 
 def _compact_match_key(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", value.lower())
+
+
+def get_heyreach_account_ids_for_client(workspace_key: str, client_name: str | None) -> list[int] | None:
+    """Return HeyReach account IDs for a named client, or None to use all accounts.
+
+    Reads HEYREACH_{WORKSPACE}_CLIENT_ACCOUNTS env var as JSON dict:
+    {"ClientName": [101, 102], "OtherClient": [201]}
+    Returns None if env var absent, client_name is None, or client not in mapping.
+    """
+    if not client_name:
+        return None
+    env_var = f"HEYREACH_{workspace_key.upper()}_CLIENT_ACCOUNTS"
+    raw = get_secret_value(env_var)
+    if not raw:
+        return None
+    try:
+        mapping: dict = json.loads(raw)
+    except (ValueError, TypeError):
+        return None
+    client_lower = client_name.lower()
+    for key, ids in mapping.items():
+        if key.lower() == client_lower:
+            return [int(i) for i in ids]
+    return None
