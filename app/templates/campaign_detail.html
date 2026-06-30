@@ -73,6 +73,40 @@
 </section>
 {% endif %}
 
+<section class="detail-card">
+  <div class="card-head"><h2 class="card-title">LinkedIn (HeyReach)</h2></div>
+  <p class="card-lead">Build a HeyReach LinkedIn DRAFT campaign from 1–3 messages. Leads are added in HeyReach after.</p>
+  <form method="post" action="/api/campaigns/{{ campaign.id }}/linkedin-messages" class="js-single-submit linkedin-msg-form">
+    {% set msgs = campaign.linkedin_messages or [] %}
+    {% for i in range(3) %}
+    <label class="field-label">Message {{ i + 1 }}{% if i > 0 %} <span class="label-note">— optional</span>{% endif %}</label>
+    <textarea class="input mono" name="messages" rows="3" placeholder="LinkedIn message {{ i + 1 }} (merge tags: {{ '{{first_name}}' }}, {{ '{{company}}' }})">{{ msgs[i] if msgs|length > i else "" }}</textarea>
+    {% endfor %}
+    <button type="submit" class="button secondary">Save LinkedIn messages</button>
+  </form>
+
+  {% if campaign.linkedin_messages %}
+  <div class="linkedin-create">
+    {% if campaign.heyreach_creating %}
+    <div class="twin-fix-running" role="status">
+      <span class="twin-spinner" aria-hidden="true"></span>
+      <span>Creating the HeyReach campaign… this refreshes when done.</span>
+    </div>
+    {% else %}
+    <form method="post" action="/api/campaigns/{{ campaign.id }}/heyreach-create" class="js-single-submit">
+      <button type="submit" class="button">Create LinkedIn campaign in HeyReach</button>
+    </form>
+    {% endif %}
+    {% if campaign.heyreach_campaign_url %}
+    <p class="twin-fix-summary">Created in HeyReach (DRAFT) — <a href="{{ campaign.heyreach_campaign_url }}" target="_blank" rel="noopener">open campaign</a>. Add leads and start it there.</p>
+    {% endif %}
+    {% if campaign.heyreach_status == "failed" and campaign.heyreach_last_error %}
+    <p class="muted">Last attempt failed: {{ campaign.heyreach_last_error }}</p>
+    {% endif %}
+  </div>
+  {% endif %}
+</section>
+
 <div class="detail-grid">
   <div class="detail-main">
 
@@ -577,6 +611,26 @@
         // transient failure — keep polling
       }
       if (attempts < 200) window.setTimeout(poll, 3000);  // ~10 min cap
+    };
+    window.setTimeout(poll, 2000);
+  })();
+</script>
+{% endif %}
+{% if campaign.heyreach_creating %}
+<script>
+  (() => {
+    const statusUrl = "/api/campaigns/{{ campaign.id }}/status";
+    let attempts = 0;
+    const poll = async () => {
+      attempts += 1;
+      try {
+        const r = await fetch(statusUrl, { headers: { Accept: "application/json" } });
+        if (r.ok) {
+          const p = await r.json();
+          if (!p.heyreach_creating) { window.location.reload(); return; }
+        }
+      } catch (_) {}
+      if (attempts < 120) window.setTimeout(poll, 3000);  // ~6 min cap
     };
     window.setTimeout(poll, 2000);
   })();
