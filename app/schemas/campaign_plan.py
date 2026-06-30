@@ -53,6 +53,7 @@ class SequenceStep(BaseModel):
     step_number: int
     delay_days: int
     channel: Literal["email", "linkedin"] = "email"
+    linkedin_subtype: Literal["connection_request", "dm"] | None = None
     variants: list[SequenceVariant]
 
     @field_validator("variants")
@@ -101,8 +102,12 @@ class CampaignPlan(BaseModel):
     def sequence_limits(cls, value: list[SequenceStep]) -> list[SequenceStep]:
         if not value:
             raise ValueError("sequence needs at least one step")
-        if len(value) > 4:
-            raise ValueError("V1 supports at most 4 sequence steps")
+        email_steps = [s for s in value if s.channel == "email"]
+        linkedin_steps = [s for s in value if s.channel == "linkedin"]
+        if len(email_steps) > 4:
+            raise ValueError("V1 supports at most 4 email sequence steps")
+        if len(linkedin_steps) > 3:
+            raise ValueError("LinkedIn sequence supports at most 3 steps")
         return value
 
 

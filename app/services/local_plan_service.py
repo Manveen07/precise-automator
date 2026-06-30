@@ -3,17 +3,47 @@ import string
 from app.services.twain_service import twain_sequence_plan
 
 
-def build_campaign_plan_from_input(raw_input: dict, note: str | None = None) -> dict:
-    parsed = raw_input.get("parsed_messaging") or {}
+def build_campaign_plan_from_input(
+    raw_input: dict | None = None,
+    note: str | None = None,
+    *,
+    parsed_result: dict | None = None,
+    workspace_key: str | None = None,
+    campaign_name: str | None = None,
+) -> "dict | tuple[dict, list[str]]":
+    """Build a campaign plan from a raw input dict or from a parsed result.
+
+    Legacy call: ``build_campaign_plan_from_input(raw_input_dict)`` → returns ``dict``.
+    New call: ``build_campaign_plan_from_input(parsed_result=..., workspace_key=..., campaign_name=...)``
+              → returns ``(plan_dict, errors_list)``.
+    """
+    _new_style = parsed_result is not None
+
+    if _new_style:
+        parsed = parsed_result
+        _workspace_key = workspace_key or ""
+        _campaign_name = campaign_name or ""
+        _template_key = "cold_email_standard_v1"
+        max_new_leads_per_day = 100
+    else:
+        assert raw_input is not None, "raw_input is required when parsed_result is not provided"
+        parsed = raw_input.get("parsed_messaging") or {}
+        _workspace_key = raw_input["workspace_key"]
+        _campaign_name = raw_input["campaign_name"]
+        _template_key = raw_input.get("template_key") or "cold_email_standard_v1"
+        max_new_leads_per_day = int(raw_input.get("max_new_leads_per_day") or 100)
+
     subjects = parsed.get("subjects") or []
     steps = parsed.get("steps") or []
-    max_new_leads_per_day = int(raw_input.get("max_new_leads_per_day") or 100)
     parser_warnings = parsed.get("warnings") or []
     plan_warnings = []
 
-    sequence = []
+    # Build email steps (preserve original step_number for Smartlead)
+    sequence_steps: list[dict] = []
     previous_day = None
     for step in steps:
+        if step.get("channel") == "linkedin":
+            continue
         step_number = int(step["step_number"])
         body_variants = step.get("body_variants") or []
         variants = _build_step_variants(step_number, subjects, body_variants)
@@ -24,15 +54,33 @@ def build_campaign_plan_from_input(raw_input: dict, note: str | None = None) -> 
                 previous_day = day
             else:
                 delay_days = _default_delay_days(step_number)
-            sequence.append(
+            sequence_steps.append(
                 {
                     "step_number": step_number,
                     "delay_days": delay_days,
+                    "channel": "email",
                     "variants": variants,
                 }
             )
         else:
             plan_warnings.append(f"Skipped step {step_number} because no body variants were parsed.")
+
+    # Append LinkedIn steps from parsed result
+    for step in steps:
+        if step.get("channel") == "linkedin":
+            variants = [
+                {"variant_label": v.get("variant_label", "A"), "subject": "", "body": v.get("body", "")}
+                for v in (step.get("body_variants") or [])
+                if v.get("body", "").strip()
+            ]
+            if variants:
+                sequence_steps.append({
+                    "step_number": step["step_number"],
+                    "delay_days": 0,
+                    "channel": "linkedin",
+                    "linkedin_subtype": step.get("linkedin_subtype") or "dm",
+                    "variants": variants,
+                })
 
     notes = [
         "Draft generated deterministically from the parsed messaging file.",
@@ -45,11 +93,11 @@ def build_campaign_plan_from_input(raw_input: dict, note: str | None = None) -> 
     notes.extend(parser_warnings)
     notes.extend(plan_warnings)
 
-    return {
-        "workspace_key": raw_input["workspace_key"],
+    plan = {
+        "workspace_key": _workspace_key,
         "client_key": None,
-        "campaign_name": raw_input["campaign_name"],
-        "template_family": raw_input.get("template_key") or "cold_email_standard_v1",
+        "campaign_name": _campaign_name,
+        "template_family": _template_key,
         "goal": "book_meeting",
         "lead_source": {"type": "none", "expected_count": None},
         "schedule": {
@@ -70,10 +118,17 @@ def build_campaign_plan_from_input(raw_input: dict, note: str | None = None) -> 
             "ooo_restart_delay_days": 10,
         },
         "inbox_selection": {"mode": "skip", "email_account_ids": [], "provider_mix": {"gmail": 0.7, "outlook": 0.3}},
-        "sequence": sequence,
+        "sequence": sequence_steps,
         "approval_required": True,
         "notes_for_operator": notes,
     }
+
+    if _new_style:
+        from app.services.validation_service import validate_campaign_plan
+        errors = validate_campaign_plan(plan)
+        return plan, errors
+
+    return plan
 
 
 def _build_step_variants(step_number: int, subjects: list[str], body_variants: list[dict]) -> list[dict]:

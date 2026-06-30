@@ -114,3 +114,49 @@ def test_twin_plan_passes_validation():
     raw = {"workspace_key": "darlean", "campaign_name": "Events - Twain", "max_new_leads_per_day": 80}
     plan = build_twin_campaign_plan(raw)
     assert validate_campaign_plan(plan, {"darlean"}) == []
+
+
+def test_build_plan_includes_linkedin_steps():
+    from app.services.local_plan_service import build_campaign_plan_from_input
+
+    parsed = {
+        "source_format": "repository",
+        "selected_campaign": "Test Campaign",
+        "subjects": ["Subject 1"],
+        "steps": [
+            {
+                "step_number": 1,
+                "channel": "email",
+                "body_variants": [{"variant_label": "A", "body": "Email body one."}],
+            },
+            {
+                "step_number": 2,
+                "channel": "linkedin",
+                "linkedin_subtype": "connection_request",
+                "body_variants": [{"variant_label": "A", "body": "Connect with me!"}],
+            },
+            {
+                "step_number": 3,
+                "channel": "linkedin",
+                "linkedin_subtype": "dm",
+                "body_variants": [{"variant_label": "A", "body": "Thanks for connecting!"}],
+            },
+        ],
+        "campaigns": [],
+        "warnings": [],
+    }
+    plan, errors = build_campaign_plan_from_input(
+        parsed_result=parsed,
+        workspace_key="preciselead",
+        campaign_name="Test Campaign",
+    )
+    assert not errors
+    sequence = plan["sequence"]
+    email_steps = [s for s in sequence if s["channel"] == "email"]
+    linkedin_steps = [s for s in sequence if s["channel"] == "linkedin"]
+    assert len(email_steps) == 1
+    assert len(linkedin_steps) == 2
+    cr = next(s for s in linkedin_steps if s["linkedin_subtype"] == "connection_request")
+    dm = next(s for s in linkedin_steps if s["linkedin_subtype"] == "dm")
+    assert cr["variants"][0]["body"] == "Connect with me!"
+    assert dm["variants"][0]["body"] == "Thanks for connecting!"
