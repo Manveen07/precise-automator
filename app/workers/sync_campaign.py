@@ -128,6 +128,10 @@ async def _maybe_create_heyreach(campaign_id: str, plan: dict) -> None:
     messages = linkedin_messages(plan)
     if not messages:
         return
+    # Skip if a HeyReach campaign already exists for this campaign doc
+    doc = store.get_campaign(campaign_id)
+    if doc and doc.get("heyreach_campaign_id"):
+        return
     store.set_heyreach_creating(campaign_id, True)
     try:
         await _create_async(campaign_id)
