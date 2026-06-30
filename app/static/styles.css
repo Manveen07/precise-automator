@@ -1867,3 +1867,48 @@ input[type="radio"] {
   background: var(--accent-soft);
   color: var(--ink);
 }
+
+/* HeyReach status row */
+.heyreach-status-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: #e8f0fe;
+  border: 1px solid #c5d5f8;
+  font-size: 13.5px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+.heyreach-status-row .status-ok { color: #1a5c1a; font-weight: 600; }
+.heyreach-status-row .status-error { color: var(--danger); font-weight: 600; }
+.heyreach-status-row .status-muted { color: var(--ink-soft); }
+
+/* LinkedIn steps summary card in sequence timeline */
+.linkedin-card { border-color: #0a66c2; }
+.linkedin-card .step-head { background: #e8f0fe; border-bottom-color: #c5d5f8; }
+.step-num.li-icon {
+  background: #0a66c2;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+}
+.li-step-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13.5px;
+}
+.li-step-row:last-child { border-bottom: none; }
+.li-step-label {
+  flex: 0 0 160px;
+  font-weight: 600;
+  color: #0a66c2;
+  font-size: 12.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.li-step-preview { font-size: 13px; color: var(--ink-soft); }

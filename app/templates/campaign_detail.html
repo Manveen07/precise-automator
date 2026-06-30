@@ -142,16 +142,19 @@
       </div>
 
       <div class="timeline">
-        {% for step in campaign.plan.sequence %}
+        {% set email_steps = campaign.plan.sequence | rejectattr("channel", "equalto", "linkedin") | list %}
+        {% set linkedin_steps = campaign.plan.sequence | selectattr("channel", "equalto", "linkedin") | list %}
+        {% for step in email_steps %}
+        {% set email_loop = loop %}
         <div class="timeline-item">
-          {% if step.step_number > 1 %}
+          {% if not loop.first %}
           <div class="delay-separator">
             <span class="delay-line" aria-hidden="true"></span>
             <span class="delay-arrow" aria-hidden="true">&#8595;</span>
             <form method="post" action="/api/campaigns/{{ campaign.id }}/delay" class="delay-form">
               <input type="hidden" name="step_number" value="{{ step.step_number }}">
               <span>Wait</span>
-              <input name="delay_days" type="number" min="1" max="30" value="{{ step.delay_days }}" aria-label="Delay for Email {{ step.step_number }} in days">
+              <input name="delay_days" type="number" min="1" max="30" value="{{ step.delay_days }}" aria-label="Delay for Email {{ loop.index }} in days">
               <span>day{% if step.delay_days != 1 %}s{% endif %} before sending</span>
               <button type="submit" class="button secondary small">Save</button>
             </form>
@@ -160,9 +163,9 @@
           <article class="step-card">
             <header class="step-head">
               <div class="step-head-left">
-                <span class="step-num">{{ step.step_number }}</span>
-                <strong>Email {{ step.step_number }}</strong>
-                {% if step.step_number == 1 %}<span class="muted step-timing">Sends immediately</span>{% endif %}
+                <span class="step-num">{{ loop.index }}</span>
+                <strong>Email {{ loop.index }}</strong>
+                {% if loop.first %}<span class="muted step-timing">Sends immediately</span>{% endif %}
               </div>
               {% if step.variants | length > 1 %}
               <div class="variant-tabs" role="tablist">
@@ -196,7 +199,7 @@
                         data-action="/api/campaigns/{{ campaign.id }}/variant-distribution" hidden>Save split</button>
               </div>
               {% endif %}
-              {% if step.step_number == 1 %}
+              {% if email_loop.first %}
               <div class="step-subject">
                 <span class="eyebrow">Subject · {{ variant.variant_label }}</span>
                 <div class="step-subject-text js-subject-view">{{ variant.subject }}</div>
@@ -221,6 +224,30 @@
           </article>
         </div>
         {% endfor %}
+        {% if linkedin_steps %}
+        <div class="timeline-item linkedin-steps-summary">
+          <div class="delay-separator">
+            <span class="delay-line" aria-hidden="true"></span>
+          </div>
+          <article class="step-card linkedin-card">
+            <header class="step-head">
+              <div class="step-head-left">
+                <span class="step-num li-icon">in</span>
+                <strong>LinkedIn Sequence ({{ linkedin_steps | length }} step{% if linkedin_steps | length != 1 %}s{% endif %})</strong>
+                <span class="muted step-timing">Runs in HeyReach in parallel</span>
+              </div>
+            </header>
+            <div class="step-body">
+              {% for step in linkedin_steps %}
+              <div class="li-step-row">
+                <span class="li-step-label">{% if step.linkedin_subtype == "connection_request" %}Connection Request{% else %}DM {{ loop.index - (1 if linkedin_steps[0].linkedin_subtype == "connection_request" else 0) }}{% endif %}</span>
+                <span class="li-step-preview muted">{{ (step.variants[0].body if step.variants else "") | truncate(80) }}</span>
+              </div>
+              {% endfor %}
+            </div>
+          </article>
+        </div>
+        {% endif %}
       </div>
 
       <details class="clean-details raw-json">

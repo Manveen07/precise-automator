@@ -65,7 +65,8 @@ def build_campaign_plan_from_input(
         else:
             plan_warnings.append(f"Skipped step {step_number} because no body variants were parsed.")
 
-    # Append LinkedIn steps from parsed result
+    # Append LinkedIn steps from parsed result (renumber sequentially to avoid collisions)
+    linkedin_number = 0
     for step in steps:
         if step.get("channel") == "linkedin":
             variants = [
@@ -74,8 +75,9 @@ def build_campaign_plan_from_input(
                 if v.get("body", "").strip()
             ]
             if variants:
+                linkedin_number += 1
                 sequence_steps.append({
-                    "step_number": step["step_number"],
+                    "step_number": linkedin_number,
                     "delay_days": 0,
                     "channel": "linkedin",
                     "linkedin_subtype": step.get("linkedin_subtype") or "dm",
