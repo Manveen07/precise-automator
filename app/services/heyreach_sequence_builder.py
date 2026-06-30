@@ -1,3 +1,5 @@
+import re
+
 _WITHDRAW_DAYS_DEFAULT = 25
 
 
@@ -16,6 +18,8 @@ def to_heyreach_message(body: str) -> tuple[str, str]:
 
     message = render("{FIRST_NAME}", "{COMPANY}")
     fallback = render("there", "your company")
+    # Fix "there ," → "there," when source has "{{first_name}} ," with space before punctuation
+    fallback = re.sub(r"\bthere\s+([,\.!?])", r"there\1", fallback)
     return message, fallback
 
 

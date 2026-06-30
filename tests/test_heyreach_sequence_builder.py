@@ -52,6 +52,13 @@ def test_to_heyreach_message_handles_company_name_alias():
     assert fb == "For your company."
 
 
+def test_to_heyreach_message_strips_space_before_punctuation_in_fallback():
+    # Source file has "{{first_name}} ," — fallback must not render "there ,"
+    msg, fb = to_heyreach_message("{{first_name}} , glad to connect.")
+    assert msg == "{FIRST_NAME} , glad to connect."
+    assert fb == "there, glad to connect."
+
+
 def test_single_message_sequence_shape():
     seq = build_linkedin_sequence(["Hi {{first_name}}"])
     assert seq["nodeType"] == "CHECK_IS_CONNECTION"
