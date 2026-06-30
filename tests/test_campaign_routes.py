@@ -1266,7 +1266,10 @@ def test_heyreach_create_schedules_and_flags(client, monkeypatch):
     monkeypatch.setattr(routes, "create_heyreach_campaign_now", lambda cid: calls.setdefault("cid", cid))
     resp = client.post("/api/campaigns/new", data={"workspace_key": "darlean", "campaign_name": "LI"})
     cid = resp.headers["location"].rsplit("/", 1)[-1]
-    client.post(f"/api/campaigns/{cid}/linkedin-messages", data={"messages": ["Hi"]})
+    import urllib.parse
+    body = urllib.parse.urlencode([("messages", "Hi")])
+    client.post(f"/api/campaigns/{cid}/linkedin-messages", content=body,
+                headers={"content-type": "application/x-www-form-urlencoded"})
     r = client.post(f"/api/campaigns/{cid}/heyreach-create", data={})
     assert r.status_code in (200, 303)
     assert calls["cid"] == cid
