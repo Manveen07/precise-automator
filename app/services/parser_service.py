@@ -136,14 +136,24 @@ def _parse_step_channel_format(text: str) -> dict | None:
             variants = _split_variants(_strip_email_block_preamble(block))
             day_match = DAY_RE.search(match.group(0))
             day = int(day_match.group(1)) if day_match else None
-            steps.append({"step_number": email_number, "day": day, "body_variants": variants})
+            steps.append({"step_number": email_number, "channel": "email", "day": day, "body_variants": variants})
             if not variants:
                 warnings.append(f"Email step {email_number} produced no body text.")
         else:
-            warnings.append(
-                f"Skipped Step {match.group(1)} ({channel_keyword}) - not an email "
-                f"channel; only email steps are synced to Smartlead."
-            )
+            # LinkedIn or other channel — emit as linkedin step with original step number
+            raw_step_number = int(match.group(1))
+            linkedin_sub = _linkedin_subtype(match.group(0))
+            block_body = text[start:end]
+            variants = _split_variants(block_body)
+            day_match = DAY_RE.search(match.group(0))
+            day = int(day_match.group(1)) if day_match else None
+            steps.append({
+                "step_number": raw_step_number,
+                "channel": "linkedin",
+                "linkedin_subtype": linkedin_sub,
+                "day": day,
+                "body_variants": variants,
+            })
 
     name = _document_title(text)
     return {
@@ -154,6 +164,14 @@ def _parse_step_channel_format(text: str) -> dict | None:
         "campaigns": [{"name": name, "subjects": subjects, "steps": steps}],
         "warnings": warnings,
     }
+
+
+def _linkedin_subtype(header_text: str) -> str:
+    """Detect connection_request vs dm from a LinkedIn step header."""
+    lower = header_text.lower()
+    if "connection" in lower and "request" in lower:
+        return "connection_request"
+    return "dm"
 
 
 def _strip_email_block_preamble(block: str) -> str:

@@ -222,9 +222,9 @@ This should also be ignored.
 def test_parse_step_prefixed_mixed_channel_keeps_email_skips_linkedin():
     """Google-Docs 'Step N — Email/LinkedIn' format with interleaved channels.
 
-    Before the fix: the whole campaign collapsed into one email body because the
-    step headers start with 'Step', not 'Email'. After: email steps are isolated
-    and renumbered, LinkedIn steps are dropped with a warning each.
+    Email steps are isolated and renumbered sequentially (1..N) for Smartlead.
+    LinkedIn steps are now emitted (not skipped) with channel='linkedin' and
+    their original step number so ordering is preserved.
     """
     text = """Health Systems Campaign: 5-Step Sequence
 
@@ -276,11 +276,14 @@ The media audit is one lens.
         "Regional Care Choice",
     ]
 
-    # Only the two email steps survive, renumbered sequentially.
-    assert [step["step_number"] for step in parsed["steps"]] == [1, 2]
+    # Email steps are renumbered sequentially; LinkedIn steps keep original numbers.
+    email_steps = [s for s in parsed["steps"] if s.get("channel", "email") == "email"]
+    linkedin_steps = [s for s in parsed["steps"] if s.get("channel") == "linkedin"]
+    assert [s["step_number"] for s in email_steps] == [1, 2]
+    assert [s["step_number"] for s in linkedin_steps] == [2, 4, 5]
 
-    body_one = parsed["steps"][0]["body_variants"][0]["body"]
-    body_two = parsed["steps"][1]["body_variants"][0]["body"]
+    body_one = email_steps[0]["body_variants"][0]["body"]
+    body_two = email_steps[1]["body_variants"][0]["body"]
     assert body_one.startswith("Hi {{first_name}},")
     assert "Message Body" not in body_one
     assert "Cone Health Perspective" not in body_one  # subject lines stripped from body
@@ -288,14 +291,12 @@ The media audit is one lens.
     assert "media mix" in body_two
 
     # No LinkedIn copy leaked into any email body.
-    bodies = [v["body"] for s in parsed["steps"] for v in s["body_variants"]]
-    assert all("LinkedIn" not in b for b in bodies)
-    assert all("media audit is one lens" not in b for b in bodies)
+    email_bodies = [v["body"] for s in email_steps for v in s["body_variants"]]
+    assert all("LinkedIn" not in b for b in email_bodies)
+    assert all("media audit is one lens" not in b for b in email_bodies)
 
-    # Each skipped LinkedIn step is reported, not silently dropped.
-    assert len(parsed["warnings"]) == 3
-    assert all("LinkedIn" in w for w in parsed["warnings"])
-    assert "Step 2" in parsed["warnings"][0]
+    # LinkedIn steps are emitted, not skipped — no "Skipped" warnings.
+    assert not any("Skipped" in w for w in parsed.get("warnings", []))
 
 
 def test_doc_comment_markers_and_definitions_are_stripped():
@@ -472,3 +473,62 @@ Body three.
     # Email 1 and 3 have content
     assert parsed["steps"][0]["body_variants"] != []
     assert parsed["steps"][2]["body_variants"] != []
+
+
+def test_parse_step_channel_linkedin_connection_request():
+    text = """Campaign Title
+
+Step 1 — Email (Day 0)
+Hey {{first_name}},
+
+Step 2 — LinkedIn (Connection Request - Optional) (Day 0)
+Hi {{first_name}}, I'd love to connect!
+
+Step 3 — LinkedIn DM#1 (3 Hours after Connection)
+Thanks for connecting {{first_name}}!
+"""
+    result = parse_messaging_file(text)
+    steps = result["steps"]
+    email_steps = [s for s in steps if s.get("channel", "email") == "email"]
+    linkedin_steps = [s for s in steps if s.get("channel") == "linkedin"]
+    assert len(email_steps) == 1
+    assert email_steps[0]["step_number"] == 1
+    assert len(linkedin_steps) == 2
+    cr_step = next(s for s in linkedin_steps if s["linkedin_subtype"] == "connection_request")
+    dm_step = next(s for s in linkedin_steps if s["linkedin_subtype"] == "dm")
+    assert "connect" in cr_step["body_variants"][0]["body"].lower()
+    assert "thanks" in dm_step["body_variants"][0]["body"].lower()
+
+
+def test_parse_step_channel_linkedin_produces_no_warning():
+    text = """Title
+
+Step 1 — Email (Day 0)
+Body.
+
+Step 2 — LinkedIn DM#1 (Day 3)
+DM body.
+"""
+    result = parse_messaging_file(text)
+    assert not any("Skipped" in w for w in result.get("warnings", []))
+
+
+def test_parse_step_channel_email_step_numbering_unaffected():
+    """Email steps still get sequential numbers 1..N for Smartlead."""
+    text = """Title
+
+Step 1 — LinkedIn (Connection Request) (Day 0)
+Connect note.
+
+Step 2 — Email (Day 1)
+First email body.
+
+Step 3 — LinkedIn DM#1 (Day 3)
+Follow-up DM.
+
+Step 4 — Email (Day 5)
+Second email body.
+"""
+    result = parse_messaging_file(text)
+    email_steps = [s for s in result["steps"] if s.get("channel", "email") == "email"]
+    assert [s["step_number"] for s in email_steps] == [1, 2]
