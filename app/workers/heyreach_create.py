@@ -8,7 +8,6 @@ without blocking the event loop.
 import asyncio
 
 from app.config import get_workspace_config
-from app.schemas.campaign_plan import linkedin_messages
 from app.services.heyreach_sequence_builder import build_linkedin_sequence
 from app.services.heyreach_service import HeyReachService
 from app import store
@@ -35,9 +34,24 @@ async def _create_async(campaign_id: str) -> dict:
 
     # Extract LinkedIn messages from the current plan
     plan = doc.get("current_plan") or {}
-    messages = linkedin_messages(plan)
-    if not messages:
-        err = "No LinkedIn-channel steps found in the campaign plan"
+    sequence_steps = plan.get("sequence") or []
+    dm_steps = sorted(
+        [s for s in sequence_steps if s.get("channel") == "linkedin" and s.get("linkedin_subtype") != "connection_request"],
+        key=lambda s: s.get("step_number", 0),
+    )
+    cr_steps = [s for s in sequence_steps if s.get("channel") == "linkedin" and s.get("linkedin_subtype") == "connection_request"]
+    dm_messages = [
+        (s.get("variants") or [{}])[0].get("body", "")
+        for s in dm_steps
+        if (s.get("variants") or [{}])[0].get("body", "").strip()
+    ]
+    connection_note = ""
+    if cr_steps:
+        cr_body = (cr_steps[0].get("variants") or [{}])[0].get("body", "")
+        connection_note = cr_body.strip()
+
+    if not dm_messages:
+        err = "No LinkedIn DM steps found in plan"
         summary["errors"].append(err)
         store.save_heyreach_result(
             campaign_id,
@@ -89,7 +103,7 @@ async def _create_async(campaign_id: str) -> dict:
         list_id = int(created_list.get("id") or created_list.get("listId"))
 
         # Build the sequence tree and create the campaign
-        sequence = build_linkedin_sequence(messages)
+        sequence = build_linkedin_sequence(dm_messages, connection_note=connection_note)
         created = await heyreach.create_campaign(campaign_name, list_id, account_ids, sequence)
         hr_id = int(created.get("id") or created.get("campaignId"))
         url = heyreach.campaign_url(hr_id)

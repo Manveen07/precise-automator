@@ -105,3 +105,24 @@ def test_rejects_empty_and_too_many():
         build_linkedin_sequence([])
     with pytest.raises(ValueError):
         build_linkedin_sequence(["a", "b", "c", "d"])
+
+
+def test_build_linkedin_sequence_connection_note_used():
+    from app.services.heyreach_sequence_builder import build_linkedin_sequence
+    tree = build_linkedin_sequence(
+        ["Follow-up message"],
+        connection_note="Hi {{first_name}}, I'd love to connect!"
+    )
+    # Find the CONNECTION_REQUEST node
+    cr_node = tree["unconditionalNode"]["unconditionalNode"]
+    assert cr_node["nodeType"] == "CONNECTION_REQUEST"
+    note = cr_node["payload"]["messages"][0]
+    assert "{FIRST_NAME}" in note
+    assert note != ""
+
+
+def test_build_linkedin_sequence_blank_note_default():
+    from app.services.heyreach_sequence_builder import build_linkedin_sequence
+    tree = build_linkedin_sequence(["DM body"])
+    cr_node = tree["unconditionalNode"]["unconditionalNode"]
+    assert cr_node["payload"]["messages"] == [""]

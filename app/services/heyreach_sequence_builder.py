@@ -63,9 +63,15 @@ def _message_chain(messages: list[str], idx: int) -> dict:
     return node
 
 
-def build_linkedin_sequence(messages: list[str], *, withdraw_days: int = _WITHDRAW_DAYS_DEFAULT) -> dict:
+def build_linkedin_sequence(
+    messages: list[str],
+    *,
+    connection_note: str = "",
+    withdraw_days: int = _WITHDRAW_DAYS_DEFAULT,
+) -> dict:
     if not messages or len(messages) > 3:
         raise ValueError("LinkedIn sequence needs 1 to 3 messages")
+    note_text, _ = to_heyreach_message(connection_note) if connection_note.strip() else ("", "")
     return {
         "nodeType": "CHECK_IS_CONNECTION",
         "actionDelay": 0,
@@ -79,7 +85,7 @@ def build_linkedin_sequence(messages: list[str], *, withdraw_days: int = _WITHDR
                 "nodeType": "CONNECTION_REQUEST",
                 "actionDelay": 3,
                 "actionDelayUnit": "HOUR",
-                "payload": {"messages": [""], "fallbackMessage": "", "toBeWithdrawnAfterDays": withdraw_days},
+                "payload": {"messages": [note_text], "fallbackMessage": "", "toBeWithdrawnAfterDays": withdraw_days},
                 "conditionalNode": _message_chain(messages, 0),
                 "unconditionalNode": {
                     **_like_post(2, "DAY"),
