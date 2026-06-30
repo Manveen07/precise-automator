@@ -22,6 +22,7 @@ import re
 import httpx
 
 from app.config import get_workspace_config, infer_smartlead_client
+from app.schemas.campaign_plan import linkedin_messages
 from app.services.sequence_builder import (
     build_smartlead_sequences,
     format_email_body_for_smartlead,
@@ -31,6 +32,7 @@ from app.services.sequence_builder import (
 from app.services.smartlead_service import SmartleadService
 from app.services.twain_service import audit_twain_field
 from app.services.validation_service import validate_campaign_plan
+from app.workers.heyreach_create import _create_async
 from app import store
 
 
@@ -111,8 +113,31 @@ async def _sync_campaign_async(campaign_id: str) -> None:
             await smartlead.attach_email_accounts(smartlead_id, email_account_ids)
 
         store.attach_smartlead(campaign_id, smartlead_id)
+        await _maybe_create_heyreach(campaign_id, plan)
     except Exception as exc:
         store.mark_sync_failed(campaign_id, _error_text(exc))
+
+
+async def _maybe_create_heyreach(campaign_id: str, plan: dict) -> None:
+    """If the plan has LinkedIn steps, run HeyReach campaign creation inline.
+
+    Errors here do NOT propagate — Smartlead sync is already complete.
+    HeyReach errors are stored via save_heyreach_result.
+    """
+    messages = linkedin_messages(plan)
+    if not messages:
+        return
+    store.set_heyreach_creating(campaign_id, True)
+    try:
+        await _create_async(campaign_id)
+    except Exception as exc:
+        store.save_heyreach_result(
+            campaign_id,
+            campaign_id_value=None,
+            url=None,
+            status="failed",
+            error=_error_text(exc),
+        )
 
 
 def _active_workspace_keys() -> set[str]:
