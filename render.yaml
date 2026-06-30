@@ -31,6 +31,14 @@ services:
         sync: false
       - key: SMARTLEAD_MYTHIC_API_KEY
         sync: false
+      - key: HEYREACH_PRECISELEAD_API_KEY
+        sync: false
+      - key: HEYREACH_BELARDI_WONG_API_KEY
+        sync: false
+      - key: HEYREACH_DARLEAN_API_KEY
+        sync: false
+      - key: HEYREACH_MYTHIC_API_KEY
+        sync: false
       - key: INBOX_SHEET_WEBAPP_URL
         sync: false
       - key: INBOX_SHEET_TAB

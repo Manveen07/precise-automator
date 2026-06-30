@@ -21,6 +21,7 @@ SMARTLEAD_WORKSPACES = [
         "key": "preciselead",
         "name": "PreciseLead",
         "api_key_env": "SMARTLEAD_PRECISELEAD_API_KEY",
+        "heyreach_api_key_env": "HEYREACH_PRECISELEAD_API_KEY",
         "self_client_name": "PreciseLeads",
         # Value of the "Client" column in the inbox sheet for this workspace.
         "sheet_client": "PRECISE_LEADS",
@@ -29,18 +30,21 @@ SMARTLEAD_WORKSPACES = [
         "key": "belardi_wong",
         "name": "Belardi Wong",
         "api_key_env": "SMARTLEAD_BELARDI_WONG_API_KEY",
+        "heyreach_api_key_env": "HEYREACH_BELARDI_WONG_API_KEY",
         "sheet_client": "Belardi Wong",
     },
     {
         "key": "darlean",
         "name": "Darlean",
         "api_key_env": "SMARTLEAD_DARLEAN_API_KEY",
+        "heyreach_api_key_env": "HEYREACH_DARLEAN_API_KEY",
         "sheet_client": "DARLEAN",
     },
     {
         "key": "mythic",
         "name": "Mythic",
         "api_key_env": "SMARTLEAD_MYTHIC_API_KEY",
+        "heyreach_api_key_env": "HEYREACH_MYTHIC_API_KEY",
         "sheet_client": "Mythic",
     },
 ]
@@ -154,11 +158,14 @@ def get_workspace_config(workspace_key: str) -> dict | None:
         if workspace["key"] != workspace_key:
             continue
         api_key = get_secret_value(workspace["api_key_env"])
+        heyreach_env = workspace.get("heyreach_api_key_env")
+        heyreach_api_key = get_secret_value(heyreach_env) if heyreach_env else None
         return {
             "key": workspace["key"],
             "name": workspace["name"],
             "api_key": api_key,
             "self_client_name": workspace.get("self_client_name") or workspace["name"],
+            "heyreach_api_key": heyreach_api_key,
         }
     return None
 
