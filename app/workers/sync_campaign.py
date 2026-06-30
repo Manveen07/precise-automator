@@ -102,7 +102,8 @@ async def _sync_campaign_async(campaign_id: str) -> None:
 
         sequences = build_smartlead_sequences(plan["sequence"])
         await smartlead.update_sequences(smartlead_id, sequences)
-        await _verify_smartlead_sequence_sync(smartlead, smartlead_id, plan["sequence"])
+        email_sequence = [s for s in plan["sequence"] if s.get("channel", "email") == "email"]
+        await _verify_smartlead_sequence_sync(smartlead, smartlead_id, email_sequence)
 
         if doc.get("is_twin"):
             verify_response = await smartlead.get_sequences(smartlead_id)

@@ -64,9 +64,12 @@ def _make_doc(with_linkedin: bool = True):
 def _make_mock_smartlead_for_doc(doc, smartlead_id=123):
     """Build a mock SmartleadService whose get_sequences returns data matching the plan."""
     plan_steps = doc["current_plan"]["sequence"]
-    # Build matching smartlead sequence data for all steps
+    # Build matching smartlead sequence data for email-only steps
+    # (Smartlead never stores LinkedIn steps — only email steps are synced)
     sl_sequences = []
     for step in plan_steps:
+        if step.get("channel", "email") != "email":
+            continue
         sl_sequences.append(
             {
                 "seq_number": step["step_number"],
