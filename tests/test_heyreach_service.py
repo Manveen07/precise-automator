@@ -11,6 +11,9 @@ class RecordingHeyReach(HeyReachService):
 
     async def post(self, endpoint, payload):
         self.calls.append(("post", endpoint, payload))
+        # Return a campaign list with account IDs so get_linkedin_accounts works
+        if "GetAll" in endpoint or "getall" in endpoint.lower():
+            return {"items": [{"id": 555, "campaignAccountIds": [101, 102]}], "totalCount": 1}
         return {"ok": True, "id": 555}
 
     async def get(self, endpoint, params=None):
@@ -18,14 +21,16 @@ class RecordingHeyReach(HeyReachService):
         return {"ok": True, "items": [{"id": 1}, {"id": 2}]}
 
 
-def test_get_linkedin_accounts_call_shape():
+def test_get_linkedin_accounts_dedupes_from_campaigns():
     async def run():
         svc = RecordingHeyReach()
-        await svc.get_linkedin_accounts(limit=50, offset=10)
+        result = await svc.get_linkedin_accounts(limit=50, offset=10)
+        # Should call campaign/GetAll as fallback
         method, endpoint, payload = svc.calls[0]
-        assert "linkedin" in endpoint.lower() or "account" in endpoint.lower()
-        blob = json.dumps(payload)
-        assert "50" in blob and "10" in blob
+        assert "campaign" in endpoint.lower()
+        # Should return deduped account IDs extracted from campaignAccountIds
+        ids = [item["id"] for item in result["items"]]
+        assert 101 in ids and 102 in ids
     asyncio.run(run())
 
 

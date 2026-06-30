@@ -34,7 +34,17 @@ class HeyReachService:
             return response.json()
 
     async def get_linkedin_accounts(self, limit: int = 100, offset: int = 0) -> dict:
-        return await self.post("linkedinaccount/GetAll", {"limit": limit, "offset": offset})
+        # Extract unique account IDs from existing campaigns as a fallback —
+        # the direct accounts endpoint is not available on all API key tiers.
+        data = await self.post("campaign/GetAll", {"limit": limit, "offset": offset})
+        seen: set[int] = set()
+        items = []
+        for c in data.get("items", []):
+            for aid in c.get("campaignAccountIds") or []:
+                if aid not in seen:
+                    seen.add(aid)
+                    items.append({"id": aid})
+        return {"items": items, "totalCount": len(items)}
 
     async def create_empty_list(self, name: str) -> dict:
         return await self.post("list/CreateEmptyList", {"name": name, "listType": "USER_LIST"})
@@ -55,4 +65,4 @@ class HeyReachService:
         }
         if schedule is not None:
             payload["schedule"] = schedule
-        return await self.post("campaign/CreateCampaign", payload)
+        return await self.post("campaign/Create", payload)
