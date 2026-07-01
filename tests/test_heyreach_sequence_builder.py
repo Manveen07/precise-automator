@@ -218,9 +218,10 @@ def test_to_heyreach_message_resolves_spintax():
     assert fb == "Hi there! We help scaling companies like your company."
 
 
-def test_to_heyreach_message_joins_soft_wrapped_opener_into_one_line():
-    # Real source pattern: name line, personalization line, body line — all single \n,
-    # meant to read as one continuous opening sentence, not 3 separate lines.
+def test_to_heyreach_message_preserves_source_line_breaks():
+    # Real source pattern: name line, personalization line, body line — each is its own
+    # line in the .txt (single \n). HeyReach output must keep that exact line layout,
+    # not join lines into a flowing paragraph.
     body = (
         "{{first_name}} , \n"
         "{{personalized_first_line}}\n"
@@ -230,9 +231,11 @@ def test_to_heyreach_message_joins_soft_wrapped_opener_into_one_line():
     )
     msg, _ = to_heyreach_message(body)
     assert msg == (
-        "{FIRST_NAME}, {PERSONALIZED_FIRST_LINE} I've spent a lot of time in regulated "
-        "categories (Ally, MetLife, a few others).\n\n"
-        "My team put together a report that features {COMPANY}. Happy to send it over."
+        "{FIRST_NAME},\n"
+        "{PERSONALIZED_FIRST_LINE}\n"
+        "I've spent a lot of time in regulated categories (Ally, MetLife, a few others).\n\n"
+        "My team put together a report that features {COMPANY}.\n"
+        "Happy to send it over."
     )
 
 
@@ -256,8 +259,8 @@ def test_to_heyreach_message_fallback_strips_custom_placeholders():
 
 
 def test_to_heyreach_message_fallback_preserves_paragraph_breaks():
-    # Fallback must keep the same \n\n paragraph structure as the message —
-    # stripping placeholder lines must not flatten real paragraph breaks.
+    # Fallback must keep the same line/paragraph structure as the message — stripping a
+    # placeholder-only line must drop just that line, not flatten neighboring line breaks.
     body = (
         "{{first_name}} , \n"
         "{{personalized_first_line}}\n"
@@ -268,7 +271,9 @@ def test_to_heyreach_message_fallback_preserves_paragraph_breaks():
     msg, fb = to_heyreach_message(body)
     assert msg.count("\n\n") == fb.count("\n\n") == 1
     assert fb == (
-        "there, I've spent a lot of time in regulated categories (Ally, MetLife, a few others).\n\n"
-        "My team put together a report that features your company. Happy to send it over."
+        "there,\n"
+        "I've spent a lot of time in regulated categories (Ally, MetLife, a few others).\n\n"
+        "My team put together a report that features your company.\n"
+        "Happy to send it over."
     )
 

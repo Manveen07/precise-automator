@@ -28,15 +28,14 @@ def to_heyreach_message(body: str, *, collapse_whitespace: bool = False) -> tupl
         text = text.replace(sig, "")
     text = text.strip()
 
-    # Normalize line endings
+    # Normalize line endings, preserving the source file's line breaks exactly —
+    # each line in the .txt stays its own line in HeyReach, matching how it reads
+    # in the original document rather than joining lines into flowing paragraphs.
     text = re.sub(r"\r\n", "\n", text)
-    # Collapse 3+ newlines to a paragraph break, then a single newline (soft wrap,
-    # e.g. "{{first_name}} ,\n{{personalized_first_line}}\nBody...") to a space so
-    # it reads as one continuous opening line instead of 3 separate lines.
+    # Collapse 3+ blank lines down to a single blank line (one paragraph gap max)
     text = re.sub(r"\n{3,}", "\n\n", text)
-    text = re.sub(r"(?<!\n)\n(?!\n)", " ", text)
-    # Trim trailing spaces left on each paragraph line
-    text = "\n\n".join(line.strip() for line in text.split("\n\n"))
+    # Trim trailing/leading spaces on each individual line, preserving line breaks
+    text = "\n".join(line.strip() for line in text.split("\n"))
     text = re.sub(r" {2,}", " ", text)
     # Fix space before punctuation, e.g. "{{first_name}} ," → "{{first_name}},"
     text = re.sub(r" +([,\.!?])", r"\1", text)
@@ -68,12 +67,17 @@ def to_heyreach_message(body: str, *, collapse_whitespace: bool = False) -> tupl
     fallback = re.sub(r"\bthere\s+([,\.!?])", r"there\1", fallback)
     # Collapse multiple spaces left by removed placeholders
     fallback = re.sub(r"[ \t]+", " ", fallback)
-    # Drop lines that are now empty/whitespace-only (a placeholder was the whole line),
-    # but preserve real paragraph breaks (\n\n) between the surviving lines/paragraphs.
-    fallback = "\n\n".join(
-        "\n".join(line.strip() for line in para.splitlines() if line.strip())
-        for para in fallback.split("\n\n")
-    )
+    # Drop only lines that a placeholder-strip left empty (they were NOT empty in `text`,
+    # i.e. before var substitution) — real blank lines from the source (already collapsed
+    # to a single \n\n above) must survive untouched.
+    original_lines = text.split("\n")
+    fallback_lines = fallback.split("\n")
+    kept_lines = [
+        line.strip()
+        for orig, line in zip(original_lines, fallback_lines)
+        if orig.strip() == "" or line.strip() != ""
+    ]
+    fallback = "\n".join(kept_lines)
     fallback = re.sub(r"\n{3,}", "\n\n", fallback)
     fallback = fallback.strip()
     return message, fallback
