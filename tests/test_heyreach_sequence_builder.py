@@ -218,10 +218,10 @@ def test_to_heyreach_message_resolves_spintax():
     assert fb == "Hi there! We help scaling companies like your company."
 
 
-def test_to_heyreach_message_preserves_source_line_breaks():
-    # Real source pattern: name line, personalization line, body line — each is its own
-    # line in the .txt (single \n). HeyReach output must keep that exact line layout,
-    # not join lines into a flowing paragraph.
+def test_to_heyreach_message_expands_single_newlines_to_paragraph_breaks():
+    # Smartlead auto-renders single \n with visual paragraph spacing; HeyReach does not.
+    # Every source line break must become a real blank-line paragraph break in HeyReach
+    # so the message reads the same way it visually does in Smartlead/the source .txt.
     body = (
         "{{first_name}} , \n"
         "{{personalized_first_line}}\n"
@@ -231,10 +231,10 @@ def test_to_heyreach_message_preserves_source_line_breaks():
     )
     msg, _ = to_heyreach_message(body)
     assert msg == (
-        "{FIRST_NAME},\n"
-        "{PERSONALIZED_FIRST_LINE}\n"
+        "{FIRST_NAME},\n\n"
+        "{PERSONALIZED_FIRST_LINE}\n\n"
         "I've spent a lot of time in regulated categories (Ally, MetLife, a few others).\n\n"
-        "My team put together a report that features {COMPANY}.\n"
+        "My team put together a report that features {COMPANY}.\n\n"
         "Happy to send it over."
     )
 
@@ -258,9 +258,9 @@ def test_to_heyreach_message_fallback_strips_custom_placeholders():
     assert fb == "there, I've spent a lot of time in healthcare."
 
 
-def test_to_heyreach_message_fallback_preserves_paragraph_breaks():
-    # Fallback must keep the same line/paragraph structure as the message — stripping a
-    # placeholder-only line must drop just that line, not flatten neighboring line breaks.
+def test_to_heyreach_message_fallback_matches_message_paragraph_structure():
+    # Fallback must keep the same expanded paragraph structure as the message — stripping
+    # a placeholder-only line must drop just that line, not flatten neighboring breaks.
     body = (
         "{{first_name}} , \n"
         "{{personalized_first_line}}\n"
@@ -269,11 +269,14 @@ def test_to_heyreach_message_fallback_preserves_paragraph_breaks():
         "Happy to send it over."
     )
     msg, fb = to_heyreach_message(body)
-    assert msg.count("\n\n") == fb.count("\n\n") == 1
+    # Message keeps all 5 lines (4 breaks); fallback drops the placeholder-only line
+    # entirely (3 breaks) rather than leaving a blank paragraph in its place.
+    assert msg.count("\n\n") == 4
+    assert fb.count("\n\n") == 3
     assert fb == (
-        "there,\n"
+        "there,\n\n"
         "I've spent a lot of time in regulated categories (Ally, MetLife, a few others).\n\n"
-        "My team put together a report that features your company.\n"
+        "My team put together a report that features your company.\n\n"
         "Happy to send it over."
     )
 

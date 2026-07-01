@@ -28,17 +28,20 @@ def to_heyreach_message(body: str, *, collapse_whitespace: bool = False) -> tupl
         text = text.replace(sig, "")
     text = text.strip()
 
-    # Normalize line endings, preserving the source file's line breaks exactly —
-    # each line in the .txt stays its own line in HeyReach, matching how it reads
-    # in the original document rather than joining lines into flowing paragraphs.
+    # Normalize line endings and collapse 3+ blank lines to one first, so we can tell
+    # "already a paragraph break" apart from "single line break" before expanding.
     text = re.sub(r"\r\n", "\n", text)
-    # Collapse 3+ blank lines down to a single blank line (one paragraph gap max)
     text = re.sub(r"\n{3,}", "\n\n", text)
-    # Trim trailing/leading spaces on each individual line, preserving line breaks
+    # Trim trailing/leading spaces on each individual line
     text = "\n".join(line.strip() for line in text.split("\n"))
     text = re.sub(r" {2,}", " ", text)
     # Fix space before punctuation, e.g. "{{first_name}} ," → "{{first_name}},"
     text = re.sub(r" +([,\.!?])", r"\1", text)
+    # Smartlead auto-renders single \n with visual paragraph spacing (HTML/CSS); HeyReach
+    # does not, so a source file that reads as separated paragraphs in Smartlead collapses
+    # into a dense wall of text in HeyReach unless every line break becomes a real blank
+    # line here too. Expand single \n -> \n\n (double newline already present stays as-is).
+    text = re.sub(r"(?<!\n)\n(?!\n)", "\n\n", text)
 
     if collapse_whitespace:
         text = re.sub(r"\s+", " ", text)
