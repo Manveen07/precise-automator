@@ -45,7 +45,7 @@ from app.services.spintax_service import apply_spintax_to_plan, count_bodies_nee
 from app.services.validation_service import validate_campaign_plan
 from app import store
 from app.schemas.campaign_plan import linkedin_messages
-from app.workers.heyreach_create import create_heyreach_campaign_now
+from app.workers.heyreach_create import create_heyreach_campaign_now, update_heyreach_sequence_now
 from app.workers.sync_campaign import _has_heyreach_attempt, sync_campaign_now
 from app.workers.twin_fix import run_twin_fix_now
 
@@ -583,13 +583,17 @@ def heyreach_create_route(
 def heyreach_reset_route(
     campaign_id: str, request: Request, background_tasks: BackgroundTasks
 ) -> Response:
-    """Clear HeyReach state and re-trigger creation (use after fixing a sequence error)."""
+    """Re-push sequence to existing HeyReach campaign, or create if none exists."""
     doc = _require_campaign(campaign_id)
     if not linkedin_messages(doc.get("current_plan") or {}):
         raise HTTPException(status_code=400, detail="No LinkedIn steps.")
-    store.save_heyreach_result(campaign_id, campaign_id_value=None, url=None, status=None, error=None)
     store.set_heyreach_creating(campaign_id, True)
-    background_tasks.add_task(create_heyreach_campaign_now, campaign_id)
+    if doc.get("heyreach_campaign_id"):
+        # Campaign exists — update sequence only, no duplicate
+        background_tasks.add_task(update_heyreach_sequence_now, campaign_id)
+    else:
+        store.save_heyreach_result(campaign_id, campaign_id_value=None, url=None, status=None, error=None)
+        background_tasks.add_task(create_heyreach_campaign_now, campaign_id)
     return _redirect_to_detail(request, campaign_id, {"ok": True, "queued": True})
 
 

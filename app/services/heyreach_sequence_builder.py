@@ -28,9 +28,9 @@ def to_heyreach_message(body: str, *, collapse_whitespace: bool = False) -> tupl
         text = text.replace(sig, "")
     text = text.strip()
 
-    # Collapse blank lines — multiple newlines become a single newline (natural paragraph spacing)
+    # Normalize line endings, collapse 3+ blank lines to one blank line
     text = re.sub(r"\r\n", "\n", text)
-    text = re.sub(r"\n{2,}", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
 
     if collapse_whitespace:
         text = re.sub(r"\s+", " ", text)
