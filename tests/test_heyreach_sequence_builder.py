@@ -162,3 +162,21 @@ def test_build_linkedin_sequence_blank_note_default():
     # No note supplied — must use non-empty fallback (API rejects empty CR messages)
     assert cr_node["payload"]["messages"][0] != ""
     assert cr_node["payload"]["fallbackMessage"] != ""
+
+
+def test_to_heyreach_message_resolves_spintax():
+    msg, fb = to_heyreach_message(
+        "{Hi|Hey|Hello} {{first_name}}! We help {scaling|growing} companies like {{company}}."
+    )
+    assert msg == "Hi {FIRST_NAME}! We help scaling companies like {COMPANY}."
+    assert fb == "Hi there! We help scaling companies like your company."
+
+
+def test_to_heyreach_message_fallback_strips_heyreach_tokens():
+    # Body already uses HeyReach token format — fallback must not contain raw {FIRST_NAME}/{COMPANY}
+    msg, fb = to_heyreach_message("Hey {FIRST_NAME}, quick thought for {COMPANY}.")
+    assert msg == "Hey {FIRST_NAME}, quick thought for {COMPANY}."
+    assert "{FIRST_NAME}" not in fb
+    assert "{COMPANY}" not in fb
+    assert fb == "Hey there, quick thought for your company."
+

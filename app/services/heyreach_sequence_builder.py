@@ -3,6 +3,25 @@ import re
 _WITHDRAW_DAYS_DEFAULT = 25
 
 
+def resolve_spintax(text: str) -> str:
+    """Resolve spintax blocks like {Hi|Hey} to their first option (e.g., 'Hi')."""
+    def replace_block(match):
+        content = match.group(1)
+        if "|" in content:
+            options = content.split("|")
+            return options[0].strip()
+        return match.group(0)
+
+    pattern = re.compile(r"\{([^{}]*\|[^{}]*)\}")
+    current = text
+    while True:
+        next_text = pattern.sub(replace_block, current)
+        if next_text == current:
+            break
+        current = next_text
+    return current
+
+
 def to_heyreach_message(body: str, *, collapse_whitespace: bool = False) -> tuple[str, str]:
     text = (body or "")
     for sig in ("%signature%", "%Signature%", "%SIGNATURE%"):
@@ -12,11 +31,15 @@ def to_heyreach_message(body: str, *, collapse_whitespace: bool = False) -> tupl
         text = re.sub(r"\s+", " ", text)
         text = re.sub(r"\s+([,\.!?])", r"\1", text)
 
+    text = resolve_spintax(text)
+
     def render(first: str, company: str) -> str:
         return (
             text.replace("{{first_name}}", first)
+            .replace("{FIRST_NAME}", first)
             .replace("{{company_name}}", company)
             .replace("{{company}}", company)
+            .replace("{COMPANY}", company)
         )
 
     message = render("{FIRST_NAME}", "{COMPANY}")
