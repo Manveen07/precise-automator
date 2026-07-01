@@ -67,10 +67,10 @@ def test_single_message_sequence_shape():
     assert notc["nodeType"] == "VIEW_PROFILE"
     cr = notc["unconditionalNode"]
     assert cr["nodeType"] == "CONNECTION_REQUEST"
-    # No CR note supplied → falls back to generic connect message (API rejects empty strings)
+    # No CR note supplied → blank strings (HeyReach "Leave Blank" behaviour)
     assert cr["payload"]["toBeWithdrawnAfterDays"] == 25
-    assert cr["payload"]["messages"] != [""] and cr["payload"]["messages"][0]
-    assert cr["payload"]["fallbackMessage"] != ""
+    assert cr["payload"]["messages"] == [""]
+    assert cr["payload"]["fallbackMessage"] == ""
     assert cr["conditionalNode"]["nodeType"] == "MESSAGE"           # accepted -> message
     # not accepted -> wait (LIKE_POST) then END
     assert cr["unconditionalNode"]["nodeType"] == "LIKE_POST"
@@ -159,9 +159,9 @@ def test_build_linkedin_sequence_blank_note_default():
     from app.services.heyreach_sequence_builder import build_linkedin_sequence
     tree = build_linkedin_sequence(["DM body"])
     cr_node = tree["unconditionalNode"]["unconditionalNode"]
-    # No note supplied — must use non-empty fallback (API rejects empty CR messages)
-    assert cr_node["payload"]["messages"][0] != ""
-    assert cr_node["payload"]["fallbackMessage"] != ""
+    # No note supplied → blank strings matching HeyReach "Leave Blank" behaviour
+    assert cr_node["payload"]["messages"] == [""]
+    assert cr_node["payload"]["fallbackMessage"] == ""
 
 
 def test_to_heyreach_message_resolves_spintax():

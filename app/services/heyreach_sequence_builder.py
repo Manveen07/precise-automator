@@ -110,10 +110,10 @@ def build_linkedin_sequence(
     else:
         note_text = ""
         note_fallback = ""
-    # CONNECTION_REQUEST requires non-empty messages list and non-empty fallback.
-    # Use a blank-note friendly default when no CR copy was provided.
-    cr_messages = [note_text] if note_text else ["Hi {FIRST_NAME}, I'd love to connect."]
-    cr_fallback = note_fallback if note_fallback else "Hi there, I'd love to connect."
+    # When no note: send empty strings — HeyReach UI uses this for "Leave Blank" CR.
+    # When note provided: use the note text and fallback.
+    cr_messages = [note_text] if note_text else [""]
+    cr_fallback = note_fallback if note_fallback else ""
     return {
         "nodeType": "CHECK_IS_CONNECTION",
         "actionDelay": 0,
