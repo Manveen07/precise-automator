@@ -32,7 +32,7 @@ from app.services.sequence_builder import (
 from app.services.smartlead_service import SmartleadService
 from app.services.twain_service import audit_twain_field
 from app.services.validation_service import validate_campaign_plan
-from app.workers.heyreach_create import _create_async
+from app.workers.heyreach_create import _sync_async
 from app import store
 
 
@@ -120,7 +120,7 @@ async def _sync_campaign_async(campaign_id: str) -> None:
 
 
 async def _maybe_create_heyreach(campaign_id: str, plan: dict) -> None:
-    """If the plan has LinkedIn steps, run HeyReach campaign creation inline.
+    """If the plan has LinkedIn steps, sync HeyReach (create or update sequence).
 
     Errors here do NOT propagate — Smartlead sync is already complete.
     HeyReach errors are stored via save_heyreach_result.
@@ -128,13 +128,9 @@ async def _maybe_create_heyreach(campaign_id: str, plan: dict) -> None:
     messages = linkedin_messages(plan)
     if not messages:
         return
-    # Skip if a HeyReach campaign already exists for this campaign doc
-    doc = store.get_campaign(campaign_id)
-    if doc and _has_heyreach_attempt(doc):
-        return
     store.set_heyreach_creating(campaign_id, True)
     try:
-        await _create_async(campaign_id)
+        await _sync_async(campaign_id)
     except Exception as exc:
         store.save_heyreach_result(
             campaign_id,
