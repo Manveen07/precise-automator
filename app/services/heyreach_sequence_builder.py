@@ -28,9 +28,18 @@ def to_heyreach_message(body: str, *, collapse_whitespace: bool = False) -> tupl
         text = text.replace(sig, "")
     text = text.strip()
 
-    # Normalize line endings, collapse 3+ blank lines to one blank line
+    # Normalize line endings
     text = re.sub(r"\r\n", "\n", text)
+    # Collapse 3+ newlines to a paragraph break, then a single newline (soft wrap,
+    # e.g. "{{first_name}} ,\n{{personalized_first_line}}\nBody...") to a space so
+    # it reads as one continuous opening line instead of 3 separate lines.
     text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"(?<!\n)\n(?!\n)", " ", text)
+    # Trim trailing spaces left on each paragraph line
+    text = "\n\n".join(line.strip() for line in text.split("\n\n"))
+    text = re.sub(r" {2,}", " ", text)
+    # Fix space before punctuation, e.g. "{{first_name}} ," → "{{first_name}},"
+    text = re.sub(r" +([,\.!?])", r"\1", text)
 
     if collapse_whitespace:
         text = re.sub(r"\s+", " ", text)

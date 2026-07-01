@@ -52,10 +52,10 @@ def test_to_heyreach_message_handles_company_name_alias():
     assert fb == "For your company."
 
 
-def test_to_heyreach_message_strips_space_before_punctuation_in_fallback():
-    # Source file has "{{first_name}} ," — fallback must not render "there ,"
+def test_to_heyreach_message_strips_space_before_punctuation():
+    # Source file has "{{first_name}} ," — neither message nor fallback should keep the space
     msg, fb = to_heyreach_message("{{first_name}} , glad to connect.")
-    assert msg == "{FIRST_NAME} , glad to connect."
+    assert msg == "{FIRST_NAME}, glad to connect."
     assert fb == "there, glad to connect."
 
 
@@ -170,6 +170,24 @@ def test_to_heyreach_message_resolves_spintax():
     )
     assert msg == "Hi {FIRST_NAME}! We help scaling companies like {COMPANY}."
     assert fb == "Hi there! We help scaling companies like your company."
+
+
+def test_to_heyreach_message_joins_soft_wrapped_opener_into_one_line():
+    # Real source pattern: name line, personalization line, body line — all single \n,
+    # meant to read as one continuous opening sentence, not 3 separate lines.
+    body = (
+        "{{first_name}} , \n"
+        "{{personalized_first_line}}\n"
+        "I've spent a lot of time in regulated categories (Ally, MetLife, a few others). \n\n"
+        "My team put together a report that features {{company}}.\n"
+        "Happy to send it over."
+    )
+    msg, _ = to_heyreach_message(body)
+    assert msg == (
+        "{FIRST_NAME}, {PERSONALIZED_FIRST_LINE} I've spent a lot of time in regulated "
+        "categories (Ally, MetLife, a few others).\n\n"
+        "My team put together a report that features {COMPANY}. Happy to send it over."
+    )
 
 
 def test_to_heyreach_message_fallback_strips_heyreach_tokens():
