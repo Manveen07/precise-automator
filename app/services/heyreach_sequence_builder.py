@@ -27,26 +27,35 @@ def to_heyreach_message(body: str, *, collapse_whitespace: bool = False) -> tupl
     for sig in ("%signature%", "%Signature%", "%SIGNATURE%"):
         text = text.replace(sig, "")
     text = text.strip()
+
+    # Collapse blank lines — multiple newlines become a single newline (natural paragraph spacing)
+    text = re.sub(r"\r\n", "\n", text)
+    text = re.sub(r"\n{2,}", "\n", text)
+
     if collapse_whitespace:
         text = re.sub(r"\s+", " ", text)
         text = re.sub(r"\s+([,\.!?])", r"\1", text)
 
     text = resolve_spintax(text)
 
+    # Convert {{custom_var}} → {CUSTOM_VAR} for HeyReach single-bracket format
+    def to_heyreach_var(m: re.Match) -> str:
+        return "{" + m.group(1).upper() + "}"
+
+    text = re.sub(r"\{\{(\w+)\}\}", to_heyreach_var, text)
+
     def render(first: str, company: str) -> str:
         return (
-            text.replace("{{first_name}}", first)
-            .replace("{FIRST_NAME}", first)
-            .replace("{{company_name}}", company)
-            .replace("{{company}}", company)
+            text.replace("{FIRST_NAME}", first)
+            .replace("{COMPANY_NAME}", company)
             .replace("{COMPANY}", company)
         )
 
     message = render("{FIRST_NAME}", "{COMPANY}")
     fallback = render("there", "your company")
-    # Strip any unresolved {{custom_var}} placeholders from fallback — HeyReach rejects them
-    fallback = re.sub(r"\{\{[^}]+\}\}", "", fallback)
-    # Fix "there ," → "there," when source has "{{first_name}} ," with space before punctuation
+    # Strip any remaining {UNKNOWN_VAR} tokens from fallback — HeyReach rejects unknown vars
+    fallback = re.sub(r"\{[A-Z_]+\}", "", fallback)
+    # Fix "there ," → "there," when source has space before punctuation
     fallback = re.sub(r"\bthere\s+([,\.!?])", r"there\1", fallback)
     # Collapse multiple spaces left by removed placeholders
     fallback = re.sub(r"  +", " ", fallback).strip()
