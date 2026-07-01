@@ -48,7 +48,10 @@ async def _create_async(campaign_id: str) -> dict:
     connection_note = ""
     if cr_steps:
         cr_body = (cr_steps[0].get("variants") or [{}])[0].get("body", "")
-        connection_note = cr_body.strip()
+        cr_body = cr_body.strip()
+        # Treat placeholder text as blank
+        if cr_body.lower() not in ("<leave blank>", "leave blank", "<blank>"):
+            connection_note = cr_body
 
     if not dm_messages:
         err = "No LinkedIn DM steps found in plan"
