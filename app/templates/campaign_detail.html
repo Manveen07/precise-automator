@@ -81,6 +81,10 @@
     <span class="status-ok">HeyReach campaign created (DRAFT)</span>
     &mdash; <a href="{{ campaign.heyreach_campaign_url }}" target="_blank" rel="noopener">Open in HeyReach</a>
     &mdash; add leads and start it there.
+    &mdash;
+    <form method="post" action="/api/campaigns/{{ campaign.id }}/heyreach-reset" style="display:inline">
+      <button type="submit" class="btn-link">Re-create</button>
+    </form>
   {% elif campaign.heyreach_last_error %}
     <span class="status-error">HeyReach failed:</span> {{ campaign.heyreach_last_error }}
     &mdash;

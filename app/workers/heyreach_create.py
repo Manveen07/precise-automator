@@ -40,10 +40,12 @@ async def _create_async(campaign_id: str) -> dict:
         key=lambda s: s.get("step_number", 0),
     )
     cr_steps = [s for s in sequence_steps if s.get("channel") == "linkedin" and s.get("linkedin_subtype") == "connection_request"]
+    _BLANK_PLACEHOLDERS = {"<leave blank>", "leave blank", "<blank>"}
     dm_messages = [
         (s.get("variants") or [{}])[0].get("body", "")
         for s in dm_steps
         if (s.get("variants") or [{}])[0].get("body", "").strip()
+        and (s.get("variants") or [{}])[0].get("body", "").strip().lower() not in _BLANK_PLACEHOLDERS
     ]
     connection_note = ""
     if cr_steps:
