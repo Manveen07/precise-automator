@@ -55,10 +55,13 @@ def to_heyreach_message(body: str, *, collapse_whitespace: bool = False) -> tupl
     fallback = render("there", "your company")
     # Strip any remaining {UNKNOWN_VAR} tokens from fallback — HeyReach rejects unknown vars
     fallback = re.sub(r"\{[A-Z_]+\}", "", fallback)
-    # Fix "there ," → "there," when source has space before punctuation
+    # Fix "there ," → "there," (space before punctuation)
     fallback = re.sub(r"\bthere\s+([,\.!?])", r"there\1", fallback)
     # Collapse multiple spaces left by removed placeholders
-    fallback = re.sub(r"  +", " ", fallback).strip()
+    fallback = re.sub(r"[ \t]+", " ", fallback)
+    # Remove lines that are now empty or whitespace-only after placeholder removal
+    fallback = "\n".join(line.strip() for line in fallback.splitlines() if line.strip())
+    fallback = fallback.strip()
     return message, fallback
 
 
