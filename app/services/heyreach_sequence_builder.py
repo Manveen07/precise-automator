@@ -44,8 +44,12 @@ def to_heyreach_message(body: str, *, collapse_whitespace: bool = False) -> tupl
 
     message = render("{FIRST_NAME}", "{COMPANY}")
     fallback = render("there", "your company")
+    # Strip any unresolved {{custom_var}} placeholders from fallback — HeyReach rejects them
+    fallback = re.sub(r"\{\{[^}]+\}\}", "", fallback)
     # Fix "there ," → "there," when source has "{{first_name}} ," with space before punctuation
     fallback = re.sub(r"\bthere\s+([,\.!?])", r"there\1", fallback)
+    # Collapse multiple spaces left by removed placeholders
+    fallback = re.sub(r"  +", " ", fallback).strip()
     return message, fallback
 
 

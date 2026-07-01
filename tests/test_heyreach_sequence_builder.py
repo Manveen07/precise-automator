@@ -180,3 +180,13 @@ def test_to_heyreach_message_fallback_strips_heyreach_tokens():
     assert "{COMPANY}" not in fb
     assert fb == "Hey there, quick thought for your company."
 
+
+def test_to_heyreach_message_fallback_strips_custom_placeholders():
+    # {{personalized_first_line}} and other custom vars must be removed from fallback
+    msg, fb = to_heyreach_message(
+        "{{first_name}} , {{personalized_first_line}} I've spent a lot of time in healthcare."
+    )
+    assert "{{personalized_first_line}}" not in fb
+    assert "{FIRST_NAME}" not in fb
+    assert fb == "there, I've spent a lot of time in healthcare."
+
