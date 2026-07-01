@@ -5,6 +5,7 @@ import asyncio
 import httpx
 
 from app.config import get_heyreach_api_key_for_client
+from app.services.heyreach_fallback_ai import clean_fallbacks_in_sequence
 from app.services.heyreach_sequence_builder import build_linkedin_sequence
 from app.services.heyreach_service import HeyReachService
 from app import store
@@ -127,6 +128,7 @@ async def _create_async(campaign_id: str) -> dict:
         list_id = int(created_list.get("id") or created_list.get("listId"))
 
         sequence = build_linkedin_sequence(dm_messages, connection_note=connection_note, delay_days=delay_days)
+        sequence, _ = clean_fallbacks_in_sequence(sequence)
         created = await heyreach.create_campaign(campaign_name, list_id, all_ids, sequence)
         hr_id = int(created.get("id") or created.get("campaignId"))
         url = heyreach.campaign_url(hr_id)
@@ -163,6 +165,7 @@ async def _update_sequence_async(campaign_id: str) -> dict:
     try:
         heyreach = _get_heyreach(doc)
         sequence = build_linkedin_sequence(dm_messages, connection_note=connection_note, delay_days=delay_days)
+        sequence, _ = clean_fallbacks_in_sequence(sequence)
         await heyreach.post("campaign/UpdateSequence", {"campaignId": hr_campaign_id, "Sequence": sequence})
         url = heyreach.campaign_url(hr_campaign_id)
         summary["status"] = "draft_created"
