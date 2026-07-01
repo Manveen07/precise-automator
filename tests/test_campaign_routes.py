@@ -1301,10 +1301,13 @@ def sample_campaign_doc():
     )
 
 
-def test_campaign_status_includes_has_linkedin_steps(client, sample_campaign_doc):
-    """Status endpoint reports has_linkedin_steps=True when plan has LinkedIn steps."""
-    # Insert campaign with LinkedIn steps in plan
+def test_campaign_status_includes_has_linkedin_steps(client, sample_campaign_doc, monkeypatch):
+    """Status endpoint reports has_linkedin_steps=True when plan has LinkedIn steps
+    AND a HeyReach key resolves for the campaign's workspace/client."""
     from app import store as app_store
+    monkeypatch.setattr(
+        "app.routes.campaigns.has_heyreach_key", lambda doc: True
+    )
     plan_with_li = dict(sample_campaign_doc.get("current_plan") or {})
     plan_with_li["sequence"] = plan_with_li.get("sequence", []) + [{
         "step_number": 99, "channel": "linkedin", "delay_days": 0,
@@ -1317,3 +1320,24 @@ def test_campaign_status_includes_has_linkedin_steps(client, sample_campaign_doc
     assert resp.status_code == 200
     data = resp.json()
     assert data["has_linkedin_steps"] is True
+
+
+def test_campaign_status_hides_linkedin_steps_when_no_heyreach_key(client, sample_campaign_doc, monkeypatch):
+    """Clients with no HeyReach workspace (e.g. Better Data, internal PL) should not
+    show the LinkedIn/HeyReach block even if the plan has LinkedIn steps."""
+    from app import store as app_store
+    monkeypatch.setattr(
+        "app.routes.campaigns.has_heyreach_key", lambda doc: False
+    )
+    plan_with_li = dict(sample_campaign_doc.get("current_plan") or {})
+    plan_with_li["sequence"] = plan_with_li.get("sequence", []) + [{
+        "step_number": 99, "channel": "linkedin", "delay_days": 0,
+        "linkedin_subtype": "dm", "variants": [{"body": "DM body"}]
+    }]
+    campaign_id = str(sample_campaign_doc["_id"])
+    app_store.update_plan(campaign_id, plan_with_li, [])
+
+    resp = client.get(f"/api/campaigns/{campaign_id}/status")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["has_linkedin_steps"] is False

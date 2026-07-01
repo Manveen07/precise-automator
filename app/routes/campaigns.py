@@ -45,7 +45,7 @@ from app.services.spintax_service import apply_spintax_to_plan, count_bodies_nee
 from app.services.validation_service import validate_campaign_plan
 from app import store
 from app.schemas.campaign_plan import linkedin_messages
-from app.workers.heyreach_create import create_heyreach_campaign_now, update_heyreach_sequence_now
+from app.workers.heyreach_create import create_heyreach_campaign_now, has_heyreach_key, update_heyreach_sequence_now
 from app.workers.sync_campaign import _has_heyreach_attempt, sync_campaign_now
 from app.workers.twin_fix import run_twin_fix_now
 
@@ -99,7 +99,7 @@ def campaign_status(campaign_id: str) -> dict:
         "twin_fix_running": doc.get("twin_fix_running", False),
         "heyreach_creating": doc.get("heyreach_creating", False),
         "heyreach_campaign_url": doc.get("heyreach_campaign_url"),
-        "has_linkedin_steps": bool(linkedin_messages(doc.get("current_plan") or {})),
+        "has_linkedin_steps": bool(linkedin_messages(doc.get("current_plan") or {})) and has_heyreach_key(doc),
         "updated_at": store.to_display_tz(doc.get("updated_at")).isoformat() if doc.get("updated_at") else None,
     }
 
@@ -503,9 +503,10 @@ def sync_to_smartlead(
         return _redirect_to_detail(request, campaign_id, {"ok": True, "status": "syncing"})
 
     update_fields = {"status": "syncing", "last_sync_error": None, "updated_at": store.now_utc()}
-    if linkedin_messages(plan):
+    if linkedin_messages(plan) and has_heyreach_key(doc):
         # Mark HeyReach as pending synchronously so the syncing-poller doesn't reload
-        # the page before the background task reaches the HeyReach step.
+        # the page before the background task reaches the HeyReach step. Skipped
+        # entirely for clients with no HeyReach workspace (e.g. Better Data, internal PL).
         update_fields["heyreach_creating"] = True
     store.campaigns_collection().update_one(
         {"_id": store.to_object_id(campaign_id)},
@@ -961,7 +962,7 @@ def _detail_payload(doc: dict) -> dict:
         "heyreach_creating": doc.get("heyreach_creating", False),
         "heyreach_last_error": doc.get("heyreach_last_error"),
         "linkedin_messages": linkedin_messages(doc.get("current_plan") or {}),
-        "has_linkedin_steps": bool(linkedin_messages(doc.get("current_plan") or {})),
+        "has_linkedin_steps": bool(linkedin_messages(doc.get("current_plan") or {})) and has_heyreach_key(doc),
         "last_sync_error": doc.get("last_sync_error"),
         "spintax_status": spintax_status,
         "synced_at": store.to_display_tz(doc.get("synced_at")),

@@ -62,6 +62,18 @@ def _account_ids(accounts_response: dict) -> list[int]:
     return ids
 
 
+def has_heyreach_key(doc: dict) -> bool:
+    """Whether a HeyReach API key resolves for this campaign's client/workspace.
+
+    Clients without their own HeyReach workspace (Better Data, and PreciseLead's
+    internal/no-client campaigns) have no key configured — HeyReach is simply
+    not applicable to them, not a failure.
+    """
+    workspace_key = doc.get("smartlead_workspace", "")
+    client_name = doc.get("smartlead_client_name")
+    return bool(get_heyreach_api_key_for_client(workspace_key, client_name))
+
+
 def _get_heyreach(doc: dict):
     workspace_key = doc.get("smartlead_workspace", "")
     client_name = doc.get("smartlead_client_name")
@@ -172,6 +184,10 @@ async def _sync_async(campaign_id: str) -> dict:
     doc = store.get_campaign(campaign_id)
     if not doc:
         return {"status": "failed", "errors": [f"Campaign not found: {campaign_id}"]}
+    if not has_heyreach_key(doc):
+        # No HeyReach workspace for this client (e.g. Better Data, internal PL) — skip quietly.
+        store.save_heyreach_result(campaign_id, campaign_id_value=None, url=None, status=None, error=None)
+        return {"status": "skipped", "errors": []}
     if doc.get("heyreach_campaign_id"):
         return await _update_sequence_async(campaign_id)
     return await _create_async(campaign_id)
