@@ -83,6 +83,10 @@
     &mdash; add leads and start it there.
   {% elif campaign.heyreach_last_error %}
     <span class="status-error">HeyReach failed:</span> {{ campaign.heyreach_last_error }}
+    &mdash;
+    <form method="post" action="/api/campaigns/{{ campaign.id }}/heyreach-reset" style="display:inline">
+      <button type="submit" class="btn-link">Retry</button>
+    </form>
   {% else %}
     <span class="status-muted">LinkedIn steps detected &mdash; HeyReach campaign will be created on sync.</span>
   {% endif %}

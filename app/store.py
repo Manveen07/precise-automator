@@ -230,7 +230,7 @@ def save_heyreach_result(
     *,
     campaign_id_value: int | None,
     url: str | None,
-    status: str,
+    status: str | None,
     error: str | None = None,
 ) -> dict | None:
     oid = to_object_id(campaign_id)

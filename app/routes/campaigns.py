@@ -579,6 +579,20 @@ def heyreach_create_route(
     return _redirect_to_detail(request, campaign_id, {"ok": True, "queued": True})
 
 
+@router.post("/api/campaigns/{campaign_id}/heyreach-reset")
+def heyreach_reset_route(
+    campaign_id: str, request: Request, background_tasks: BackgroundTasks
+) -> Response:
+    """Clear HeyReach state and re-trigger creation (use after fixing a sequence error)."""
+    doc = _require_campaign(campaign_id)
+    if not linkedin_messages(doc.get("current_plan") or {}):
+        raise HTTPException(status_code=400, detail="No LinkedIn steps.")
+    store.save_heyreach_result(campaign_id, campaign_id_value=None, url=None, status=None, error=None)
+    store.set_heyreach_creating(campaign_id, True)
+    background_tasks.add_task(create_heyreach_campaign_now, campaign_id)
+    return _redirect_to_detail(request, campaign_id, {"ok": True, "queued": True})
+
+
 @router.post("/api/campaigns/{campaign_id}/twin-fix")
 def twin_fix(
     campaign_id: str,
