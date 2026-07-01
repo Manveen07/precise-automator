@@ -502,9 +502,14 @@ def sync_to_smartlead(
     if doc.get("status") == "syncing":
         return _redirect_to_detail(request, campaign_id, {"ok": True, "status": "syncing"})
 
+    update_fields = {"status": "syncing", "last_sync_error": None, "updated_at": store.now_utc()}
+    if linkedin_messages(plan):
+        # Mark HeyReach as pending synchronously so the syncing-poller doesn't reload
+        # the page before the background task reaches the HeyReach step.
+        update_fields["heyreach_creating"] = True
     store.campaigns_collection().update_one(
         {"_id": store.to_object_id(campaign_id)},
-        {"$set": {"status": "syncing", "last_sync_error": None, "updated_at": store.now_utc()}},
+        {"$set": update_fields},
     )
     background_tasks.add_task(sync_campaign_now, campaign_id)
     return _redirect_to_detail(request, campaign_id, {"ok": True, "status": "syncing"})

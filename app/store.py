@@ -174,6 +174,7 @@ def mark_sync_failed(campaign_id: str, error_text: str) -> dict | None:
             "$set": {
                 "status": "failed",
                 "last_sync_error": error_text,
+                "heyreach_creating": False,
                 "updated_at": now_utc(),
             }
         },
