@@ -30,26 +30,32 @@ def sync_heyreach_now(campaign_id: str) -> dict:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _extract_linkedin_messages(plan: dict) -> tuple[list[str], str]:
-    """Return (dm_messages, connection_note) from a plan dict."""
+def _extract_linkedin_messages(plan: dict) -> tuple[list[str], str, list[int]]:
+    """Return (dm_messages, connection_note, delay_days) from a plan dict.
+
+    delay_days carries each DM step's file-specified day gap (delay_days field
+    from local_plan_service), so a follow-up marked "Day 3" in the source file
+    fires 3 days after the previous message instead of the 1-day default.
+    """
     sequence_steps = plan.get("sequence") or []
     dm_steps = sorted(
         [s for s in sequence_steps if s.get("channel") == "linkedin" and s.get("linkedin_subtype") != "connection_request"],
         key=lambda s: s.get("step_number", 0),
     )
     cr_steps = [s for s in sequence_steps if s.get("channel") == "linkedin" and s.get("linkedin_subtype") == "connection_request"]
-    dm_messages = [
-        (s.get("variants") or [{}])[0].get("body", "")
-        for s in dm_steps
-        if (s.get("variants") or [{}])[0].get("body", "").strip()
-        and (s.get("variants") or [{}])[0].get("body", "").strip().lower() not in _BLANK
-    ]
+    dm_messages = []
+    delay_days = []
+    for s in dm_steps:
+        body = (s.get("variants") or [{}])[0].get("body", "")
+        if body.strip() and body.strip().lower() not in _BLANK:
+            dm_messages.append(body)
+            delay_days.append(s.get("delay_days"))
     connection_note = ""
     if cr_steps:
         cr_body = (cr_steps[0].get("variants") or [{}])[0].get("body", "").strip()
         if cr_body.lower() not in _BLANK:
             connection_note = cr_body
-    return dm_messages, connection_note
+    return dm_messages, connection_note, delay_days
 
 
 def _account_ids(accounts_response: dict) -> list[int]:
@@ -96,7 +102,7 @@ async def _create_async(campaign_id: str) -> dict:
         summary["errors"].append(f"Campaign not found: {campaign_id}")
         return summary
 
-    dm_messages, connection_note = _extract_linkedin_messages(doc.get("current_plan") or {})
+    dm_messages, connection_note, delay_days = _extract_linkedin_messages(doc.get("current_plan") or {})
     if not dm_messages:
         err = "No LinkedIn DM steps found in plan"
         summary["errors"].append(err)
@@ -120,7 +126,7 @@ async def _create_async(campaign_id: str) -> dict:
         created_list = await heyreach.create_empty_list(campaign_name)
         list_id = int(created_list.get("id") or created_list.get("listId"))
 
-        sequence = build_linkedin_sequence(dm_messages, connection_note=connection_note)
+        sequence = build_linkedin_sequence(dm_messages, connection_note=connection_note, delay_days=delay_days)
         created = await heyreach.create_campaign(campaign_name, list_id, all_ids, sequence)
         hr_id = int(created.get("id") or created.get("campaignId"))
         url = heyreach.campaign_url(hr_id)
@@ -149,14 +155,14 @@ async def _update_sequence_async(campaign_id: str) -> dict:
     if not hr_campaign_id:
         return await _create_async(campaign_id)
 
-    dm_messages, connection_note = _extract_linkedin_messages(doc.get("current_plan") or {})
+    dm_messages, connection_note, delay_days = _extract_linkedin_messages(doc.get("current_plan") or {})
     if not dm_messages:
         summary["errors"].append("No LinkedIn DM steps found in plan")
         return summary
 
     try:
         heyreach = _get_heyreach(doc)
-        sequence = build_linkedin_sequence(dm_messages, connection_note=connection_note)
+        sequence = build_linkedin_sequence(dm_messages, connection_note=connection_note, delay_days=delay_days)
         await heyreach.post("campaign/UpdateSequence", {"campaignId": hr_campaign_id, "Sequence": sequence})
         url = heyreach.campaign_url(hr_campaign_id)
         summary["status"] = "draft_created"

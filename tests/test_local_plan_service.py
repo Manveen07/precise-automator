@@ -160,3 +160,56 @@ def test_build_plan_includes_linkedin_steps():
     dm = next(s for s in linkedin_steps if s["linkedin_subtype"] == "dm")
     assert cr["variants"][0]["body"] == "Connect with me!"
     assert dm["variants"][0]["body"] == "Thanks for connecting!"
+
+
+def test_linkedin_dm_delay_days_carries_file_specified_day_gap():
+    """A follow-up DM step with 'day' in the parsed file should get delay_days
+    relative to the previous LinkedIn DM's day (CR steps don't anchor this)."""
+    from app.services.local_plan_service import build_campaign_plan_from_input
+
+    parsed = {
+        "source_format": "repository",
+        "selected_campaign": "Test Campaign",
+        "subjects": ["Subject 1"],
+        "steps": [
+            {
+                "step_number": 1,
+                "channel": "email",
+                "body_variants": [{"variant_label": "A", "body": "Email body one."}],
+            },
+            {
+                "step_number": 2,
+                "channel": "linkedin",
+                "linkedin_subtype": "connection_request",
+                "day": None,
+                "body_variants": [{"variant_label": "A", "body": "Connect!"}],
+            },
+            {
+                "step_number": 3,
+                "channel": "linkedin",
+                "linkedin_subtype": "dm",
+                "day": 0,
+                "body_variants": [{"variant_label": "A", "body": "DM one"}],
+            },
+            {
+                "step_number": 4,
+                "channel": "linkedin",
+                "linkedin_subtype": "dm",
+                "day": 4,
+                "body_variants": [{"variant_label": "A", "body": "DM two"}],
+            },
+        ],
+        "campaigns": [],
+        "warnings": [],
+    }
+    plan, errors = build_campaign_plan_from_input(
+        parsed_result=parsed, workspace_key="preciselead", campaign_name="Test Campaign",
+    )
+    assert not errors
+    linkedin_steps = [s for s in plan["sequence"] if s["channel"] == "linkedin"]
+    cr = next(s for s in linkedin_steps if s["linkedin_subtype"] == "connection_request")
+    dm1 = next(s for s in linkedin_steps if s["variants"][0]["body"] == "DM one")
+    dm2 = next(s for s in linkedin_steps if s["variants"][0]["body"] == "DM two")
+    assert cr["delay_days"] == 0
+    assert dm1["delay_days"] == 0
+    assert dm2["delay_days"] == 4

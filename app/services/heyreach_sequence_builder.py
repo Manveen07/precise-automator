@@ -74,7 +74,12 @@ def to_heyreach_message(body: str, *, collapse_whitespace: bool = False) -> tupl
     return message, fallback
 
 
-def _like_post(delay: int = 3, unit: str = "DAY") -> dict:
+_DEFAULT_FOLLOWUP_DELAY_DAYS = 1
+_FIRST_MESSAGE_DELAY = (3, "HOUR")  # fires right after connection-check / CR acceptance
+_NOT_ACCEPTED_BUFFER_DAYS = 1  # slack added on top of the accepted-branch total
+
+
+def _like_post(delay: int, unit: str) -> dict:
     return {
         "nodeType": "LIKE_POST",
         "actionDelay": delay,
@@ -88,7 +93,7 @@ def _like_post(delay: int = 3, unit: str = "DAY") -> dict:
     }
 
 
-def _view_profile(delay: int = 3, unit: str = "DAY") -> dict:
+def _view_profile(delay: int, unit: str) -> dict:
     return {"nodeType": "VIEW_PROFILE", "actionDelay": delay, "actionDelayUnit": unit}
 
 
@@ -96,26 +101,49 @@ def _end(delay: int = 0, unit: str = "HOUR") -> dict:
     return {"nodeType": "END", "actionDelay": delay, "actionDelayUnit": unit}
 
 
-def _interaction(idx: int) -> dict:
-    return _like_post() if idx % 2 == 0 else _view_profile()
+def _interaction(idx: int, delay_days: int) -> dict:
+    return _like_post(delay_days, "DAY") if idx % 2 == 0 else _view_profile(delay_days, "DAY")
 
 
-def _message_chain(messages: list[str], idx: int) -> dict:
+def _normalize_delays(messages: list[str], delay_days: list[int] | None) -> list[int]:
+    """Delay (in days) before each follow-up message, indexed 1..len-1 (index 0 unused —
+    the first message always fires FIRST_MESSAGE_DELAY after connection/acceptance).
+    Falls back to _DEFAULT_FOLLOWUP_DELAY_DAYS for any step the file didn't specify."""
+    if not delay_days:
+        return [_DEFAULT_FOLLOWUP_DELAY_DAYS] * len(messages)
+    out = list(delay_days) + [_DEFAULT_FOLLOWUP_DELAY_DAYS] * (len(messages) - len(delay_days))
+    return [d if isinstance(d, int) and d > 0 else _DEFAULT_FOLLOWUP_DELAY_DAYS for d in out[: len(messages)]]
+
+
+def _message_chain(messages: list[str], delays: list[int], idx: int) -> dict:
     message, fallback = to_heyreach_message(messages[idx])
+    delay, unit = _FIRST_MESSAGE_DELAY if idx == 0 else (3, "HOUR")
     node = {
         "nodeType": "MESSAGE",
-        "actionDelay": 1,
-        "actionDelayUnit": "DAY",
+        "actionDelay": delay,
+        "actionDelayUnit": unit,
         "payload": {"messages": [message], "fallbackMessage": fallback},
-        "conditionalNode": _end(0, "HOUR"),  # replied -> exit
+        "conditionalNode": _end(1, "DAY"),  # replied -> exit
     }
     if idx == len(messages) - 1:
-        node["unconditionalNode"] = _end(3, "DAY")
+        node["unconditionalNode"] = _end(_DEFAULT_FOLLOWUP_DELAY_DAYS, "DAY")
     else:
-        interaction = _interaction(idx)
-        interaction["unconditionalNode"] = _message_chain(messages, idx + 1)
+        interaction = _interaction(idx, delays[idx + 1])
+        interaction["unconditionalNode"] = _message_chain(messages, delays, idx + 1)
         node["unconditionalNode"] = interaction
     return node
+
+
+def _accepted_branch_total_days(delays: list[int]) -> int:
+    """Cumulative wait (in days) the accepted+all-follow-ups branch takes end to end,
+    used to size the not-accepted branch's final wait so a late accepter is never
+    cut off mid-sequence."""
+    # First message: ~0 days (fires same day, 3h after acceptance).
+    # Each follow-up adds its interaction delay + the reply-exit END's 1 day.
+    total = 1  # the accepted branch's own final reply-exit wait
+    for idx in range(1, len(delays)):
+        total += delays[idx]
+    return total
 
 
 def build_linkedin_sequence(
@@ -123,7 +151,14 @@ def build_linkedin_sequence(
     *,
     connection_note: str = "",
     withdraw_days: int = _WITHDRAW_DAYS_DEFAULT,
+    delay_days: list[int] | None = None,
 ) -> dict:
+    """Build the CHECK_IS_CONNECTION -> ... -> END node tree for a LinkedIn sequence.
+
+    delay_days: optional per-follow-up-message day gap, indexed 0..len(messages)-1
+    (index 0 is unused/ignored — the first message always fires shortly after
+    connection/acceptance). Falls back to a 1-day gap for any step not specified.
+    """
     if not messages or len(messages) > 3:
         raise ValueError("LinkedIn sequence needs 1 to 3 messages")
     if connection_note.strip():
@@ -135,24 +170,33 @@ def build_linkedin_sequence(
     # When note provided: use the note text and fallback.
     cr_messages = [note_text] if note_text else [""]
     cr_fallback = note_fallback if note_fallback else ""
+
+    delays = _normalize_delays(messages, delay_days)
+    not_accepted_wait = _accepted_branch_total_days(delays) + _NOT_ACCEPTED_BUFFER_DAYS
+
     return {
         "nodeType": "CHECK_IS_CONNECTION",
         "actionDelay": 0,
         "actionDelayUnit": "HOUR",
-        "conditionalNode": _message_chain(messages, 0),
+        # Already connected -> message right away
+        "conditionalNode": _message_chain(messages, delays, 0),
         "unconditionalNode": {
+            # Not connected -> view profile, then send the connection request almost
+            # immediately (matches reference: 1h view, 3h request — not a multi-day wait).
             "nodeType": "VIEW_PROFILE",
             "actionDelay": 1,
-            "actionDelayUnit": "DAY",
+            "actionDelayUnit": "HOUR",
             "unconditionalNode": {
                 "nodeType": "CONNECTION_REQUEST",
-                "actionDelay": 2,
-                "actionDelayUnit": "DAY",
+                "actionDelay": 3,
+                "actionDelayUnit": "HOUR",
                 "payload": {"messages": cr_messages, "fallbackMessage": cr_fallback, "toBeWithdrawnAfterDays": withdraw_days},
-                "conditionalNode": _message_chain(messages, 0),
+                "conditionalNode": _message_chain(messages, delays, 0),
                 "unconditionalNode": {
-                    **_like_post(3, "DAY"),
-                    "unconditionalNode": _end(1, "DAY"),
+                    # Not accepted: wait as long as the full accepted+messaged branch
+                    # would take, so a late accepter still gets the follow-up sequence.
+                    **_like_post(2, "DAY"),
+                    "unconditionalNode": _end(not_accepted_wait, "DAY"),
                 },
             },
         },

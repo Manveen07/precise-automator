@@ -65,8 +65,12 @@ def build_campaign_plan_from_input(
         else:
             plan_warnings.append(f"Skipped step {step_number} because no body variants were parsed.")
 
-    # Append LinkedIn steps from parsed result (renumber sequentially to avoid collisions)
+    # Append LinkedIn steps from parsed result (renumber sequentially to avoid collisions).
+    # delay_days is tracked relative to the previous LinkedIn DM's file-specified day —
+    # the connection request itself always fires immediately, so it doesn't anchor the
+    # DM day sequence.
     linkedin_number = 0
+    previous_linkedin_dm_day = None
     for step in steps:
         if step.get("channel") == "linkedin":
             variants = [
@@ -76,11 +80,18 @@ def build_campaign_plan_from_input(
             ]
             if variants:
                 linkedin_number += 1
+                subtype = step.get("linkedin_subtype") or "dm"
+                day = step.get("day")
+                if subtype == "connection_request" or not isinstance(day, int):
+                    delay_days = 0
+                else:
+                    delay_days = 0 if previous_linkedin_dm_day is None else max(0, day - previous_linkedin_dm_day)
+                    previous_linkedin_dm_day = day
                 sequence_steps.append({
                     "step_number": linkedin_number,
-                    "delay_days": 0,
+                    "delay_days": delay_days,
                     "channel": "linkedin",
-                    "linkedin_subtype": step.get("linkedin_subtype") or "dm",
+                    "linkedin_subtype": subtype,
                     "variants": variants,
                 })
 

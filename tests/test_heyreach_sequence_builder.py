@@ -26,15 +26,16 @@ def _all_leaves_are_end(node):
 
 
 def _delays_valid(node):
-    """Post-action nodes need delay >= 3h or any DAY value; 0 only allowed on
-    the first CHECK_IS_CONNECTION and on MESSAGE reply-exit END nodes."""
+    """Post-action nodes need delay >= 1h or any DAY value; 0 only allowed on
+    the first CHECK_IS_CONNECTION. Matches the live reference campaign
+    (491489), which uses VIEW_PROFILE actionDelay=1 HOUR."""
     def walk(n, is_root):
         if not isinstance(n, dict):
             return True
         delay = n.get("actionDelay", 0)
         unit = n.get("actionDelayUnit", "HOUR")
         zero_ok = is_root or n.get("nodeType") == "END"  # reply-exit ENDs use 0
-        if not zero_ok and unit == "HOUR" and delay < 3:
+        if not zero_ok and unit == "HOUR" and delay < 1:
             return False
         return all(walk(n.get(k), False) for k in ("conditionalNode", "unconditionalNode") if n.get(k))
     return walk(node, True)
@@ -115,6 +116,51 @@ def test_rejects_empty_and_too_many():
         build_linkedin_sequence([])
     with pytest.raises(ValueError):
         build_linkedin_sequence(["a", "b", "c", "d"])
+
+
+def test_first_message_fires_shortly_after_connection_or_acceptance():
+    """Step 1 DM should go right away — 3h after CHECK_IS_CONNECTION (already
+    connected) or 3h after CR acceptance, not a multi-day wait."""
+    seq = build_linkedin_sequence(["Hi {{first_name}}", "Follow up"])
+    already_connected_msg1 = seq["conditionalNode"]
+    assert already_connected_msg1["actionDelay"] == 3
+    assert already_connected_msg1["actionDelayUnit"] == "HOUR"
+
+    cr = seq["unconditionalNode"]["unconditionalNode"]
+    assert cr["nodeType"] == "CONNECTION_REQUEST"
+    assert cr["actionDelay"] == 3 and cr["actionDelayUnit"] == "HOUR"  # CR fires almost immediately
+    accepted_msg1 = cr["conditionalNode"]
+    assert accepted_msg1["actionDelay"] == 3
+    assert accepted_msg1["actionDelayUnit"] == "HOUR"
+
+
+def test_followup_uses_file_specified_day_gap():
+    """A follow-up's interaction-node delay should match the file's day gap,
+    not the 1-day default, when delay_days is provided."""
+    seq = build_linkedin_sequence(["Msg1", "Msg2"], delay_days=[0, 3])
+    interaction = seq["conditionalNode"]["unconditionalNode"]
+    assert interaction["nodeType"] in ("LIKE_POST", "VIEW_PROFILE")
+    assert interaction["actionDelay"] == 3
+    assert interaction["actionDelayUnit"] == "DAY"
+
+
+def test_followup_defaults_to_one_day_gap_when_unspecified():
+    seq = build_linkedin_sequence(["Msg1", "Msg2"])
+    interaction = seq["conditionalNode"]["unconditionalNode"]
+    assert interaction["actionDelay"] == 1
+    assert interaction["actionDelayUnit"] == "DAY"
+
+
+def test_not_accepted_branch_waits_at_least_as_long_as_accepted_branch():
+    """A late accepter (e.g. day 5) must not be cut off — the not-accepted
+    branch's final wait should cover the full accepted+all-followups timeline."""
+    seq = build_linkedin_sequence(["Msg1", "Msg2", "Msg3"], delay_days=[0, 3, 4])
+    cr = seq["unconditionalNode"]["unconditionalNode"]
+    not_accepted_end = cr["unconditionalNode"]["unconditionalNode"]
+    assert not_accepted_end["nodeType"] == "END"
+    assert not_accepted_end["actionDelayUnit"] == "DAY"
+    # Accepted branch total: 1 (reply-exit) + 3 + 4 = 8, plus 1-day buffer = 9
+    assert not_accepted_end["actionDelay"] >= 8
 
 
 def test_build_linkedin_sequence_connection_note_used():
