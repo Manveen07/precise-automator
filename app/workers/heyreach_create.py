@@ -4,7 +4,7 @@ import asyncio
 
 import httpx
 
-from app.config import get_workspace_config
+from app.config import get_heyreach_api_key_for_client
 from app.services.heyreach_sequence_builder import build_linkedin_sequence
 from app.services.heyreach_service import HeyReachService
 from app import store
@@ -63,10 +63,13 @@ def _account_ids(accounts_response: dict) -> list[int]:
 
 
 def _get_heyreach(doc: dict):
-    workspace = get_workspace_config(doc.get("smartlead_workspace", ""))
-    if not workspace or not workspace.get("heyreach_api_key"):
-        raise RuntimeError(f"HeyReach API key not configured for workspace '{doc.get('smartlead_workspace')}'")
-    return HeyReachService(workspace["heyreach_api_key"])
+    workspace_key = doc.get("smartlead_workspace", "")
+    client_name = doc.get("smartlead_client_name")
+    api_key = get_heyreach_api_key_for_client(workspace_key, client_name)
+    if not api_key:
+        label = client_name or workspace_key
+        raise RuntimeError(f"HeyReach API key not configured for '{label}'")
+    return HeyReachService(api_key)
 
 
 # ---------------------------------------------------------------------------

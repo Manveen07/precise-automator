@@ -60,6 +60,8 @@ SMARTLEAD_CLIENT_RULES = {
             "aliases": ("melior", "ryan markman"),
             # Email-domain substrings identifying this sub-client's inboxes in the sheet.
             "inbox_domains": ("melior",),
+            # Sub-client has its own HeyReach workspace (PreciseLead itself has none).
+            "heyreach_api_key_env": "HEYREACH_MELIOR_API_KEY",
         },
         {
             "key": "svsg",
@@ -67,6 +69,7 @@ SMARTLEAD_CLIENT_RULES = {
             "client_id": 145916,
             "aliases": ("osc", "staff ai", "staffai", "svsg", "sri", "srivatsan"),
             "inbox_domains": ("osc", "opsc", "staffai", "motionerp", "gofloaters"),
+            "heyreach_api_key_env": "HEYREACH_OSC_API_KEY",
         },
         {
             "key": "better_data",
@@ -74,6 +77,7 @@ SMARTLEAD_CLIENT_RULES = {
             "client_id": 88657,
             "aliases": ("better data", "better data at the analytics"),
             "inbox_domains": ("bettrdata",),
+            # No HeyReach key yet — LinkedIn campaign creation unavailable for this client.
         },
     ]
 }
@@ -221,6 +225,31 @@ def _client_alias_matches(campaign_name: str, alias: str) -> bool:
 
 def _compact_match_key(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", value.lower())
+
+
+def get_heyreach_api_key_for_client(workspace_key: str, client_name: str | None) -> str | None:
+    """Resolve the HeyReach API key to use for a campaign.
+
+    Some sub-clients (e.g. PreciseLead's Melior, SVSG) run their own HeyReach
+    workspace instead of sharing the parent Smartlead workspace's key. If the
+    sub-client has its own `heyreach_api_key_env` configured, use that;
+    otherwise fall back to the parent workspace's HeyReach key (or None if
+    neither is configured).
+    """
+    if client_name:
+        client_lower = client_name.lower()
+        for rule in SMARTLEAD_CLIENT_RULES.get(workspace_key, []):
+            if rule["name"].lower() != client_lower and client_lower not in rule.get("aliases", ()):
+                continue
+            sub_env = rule.get("heyreach_api_key_env")
+            if sub_env:
+                sub_key = get_secret_value(sub_env)
+                if sub_key:
+                    return sub_key
+            break
+
+    workspace = get_workspace_config(workspace_key)
+    return workspace.get("heyreach_api_key") if workspace else None
 
 
 def get_heyreach_account_ids_for_client(workspace_key: str, client_name: str | None) -> list[int] | None:

@@ -106,6 +106,8 @@ def count_bodies_needing_spintax(plan: dict) -> tuple[int, int]:
     total = 0
     need = 0
     for step in plan.get("sequence", []) or []:
+        if step.get("channel") == "linkedin":
+            continue
         for variant in step.get("variants", []) or []:
             total += 1
             if not body_has_spintax(variant.get("body", "")):
@@ -145,6 +147,8 @@ def apply_spintax_to_plan(plan: dict, client: Anthropic) -> tuple[dict, dict]:
     skipped = 0
     generated = 0
     for step in new_plan.get("sequence", []) or []:
+        if step.get("channel") == "linkedin":
+            continue
         for variant in step.get("variants", []) or []:
             body = variant.get("body", "")
             if body_has_spintax(body):

@@ -126,3 +126,34 @@ def test_apply_spintax_does_not_mutate_input_plan():
     original = {"sequence": [{"variants": [{"body": "Plain body"}]}]}
     apply_spintax_to_plan(original, client)
     assert original["sequence"][0]["variants"][0]["body"] == "Plain body"
+
+
+def test_apply_spintax_skips_linkedin_channel():
+    client = FakeAnthropicClient()
+    plan = {
+        "sequence": [
+            {"channel": "email", "variants": [{"body": "Email body"}]},
+            {"channel": "linkedin", "variants": [{"body": "LinkedIn body"}]},
+        ]
+    }
+    new_plan, stats = apply_spintax_to_plan(plan, client)
+
+    # Only the email body should be processed (1 call)
+    assert client.calls == ["Email body"]
+    assert stats["generated"] == 1
+    assert new_plan["sequence"][0]["variants"][0]["body"] == "{Hi|Hey} Email body"
+    # LinkedIn body must remain completely unchanged
+    assert new_plan["sequence"][1]["variants"][0]["body"] == "LinkedIn body"
+
+
+def test_count_bodies_skips_linkedin_channel():
+    plan = {
+        "sequence": [
+            {"channel": "email", "variants": [{"body": "plain email"}]},
+            {"channel": "linkedin", "variants": [{"body": "plain linkedin"}]},
+        ]
+    }
+    need, total = count_bodies_needing_spintax(plan)
+    # Only email step variants should be counted
+    assert (need, total) == (1, 1)
+

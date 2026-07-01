@@ -42,7 +42,7 @@ def _doc_with_linkedin(messages, **kw):
 @pytest.fixture
 def patched(monkeypatch):
     fake = FakeHeyReach()
-    monkeypatch.setattr(heyreach_create, "get_workspace_config", lambda k: {"key": k, "heyreach_api_key": "KEY"})
+    monkeypatch.setattr(heyreach_create, "get_heyreach_api_key_for_client", lambda w, c: "KEY")
     monkeypatch.setattr(heyreach_create, "HeyReachService", lambda key: fake)
     return fake
 
@@ -73,7 +73,7 @@ def test_no_linkedin_steps_errors(patched):
 
 
 def test_no_key_errors(monkeypatch):
-    monkeypatch.setattr(heyreach_create, "get_workspace_config", lambda k: {"key": k, "heyreach_api_key": None})
+    monkeypatch.setattr(heyreach_create, "get_heyreach_api_key_for_client", lambda w, c: None)
     doc = _doc_with_linkedin(["Hi"])
     cid = str(doc["_id"])
     summary = asyncio.run(heyreach_create._create_async(cid))
@@ -86,7 +86,7 @@ def test_no_senders_errors(monkeypatch):
         async def get_linkedin_accounts(self, limit=100, offset=0):
             return {"items": []}
     fake = NoSenders()
-    monkeypatch.setattr(heyreach_create, "get_workspace_config", lambda k: {"key": k, "heyreach_api_key": "KEY"})
+    monkeypatch.setattr(heyreach_create, "get_heyreach_api_key_for_client", lambda w, c: "KEY")
     monkeypatch.setattr(heyreach_create, "HeyReachService", lambda key: fake)
     doc = _doc_with_linkedin(["Hi"])
     summary = asyncio.run(heyreach_create._create_async(str(doc["_id"])))
@@ -125,9 +125,7 @@ def test_create_heyreach_uses_client_account_mapping(monkeypatch):
 
     with patch("app.workers.heyreach_create.store") as mock_store, \
          patch("app.workers.heyreach_create.HeyReachService", return_value=mock_svc), \
-         patch("app.workers.heyreach_create.get_workspace_config", return_value={
-             "key": "mythic", "heyreach_api_key": "test-key"
-         }):
+         patch("app.workers.heyreach_create.get_heyreach_api_key_for_client", return_value="test-key"):
         mock_store.get_campaign.return_value = doc
         mock_store.save_heyreach_result = MagicMock()
         mock_store.set_heyreach_creating = MagicMock()
@@ -170,9 +168,7 @@ def test_create_heyreach_uses_all_accounts_when_no_mapping(monkeypatch):
 
     with patch("app.workers.heyreach_create.store") as mock_store, \
          patch("app.workers.heyreach_create.HeyReachService", return_value=mock_svc), \
-         patch("app.workers.heyreach_create.get_workspace_config", return_value={
-             "key": "preciselead", "heyreach_api_key": "test-key"
-         }):
+         patch("app.workers.heyreach_create.get_heyreach_api_key_for_client", return_value="test-key"):
         mock_store.get_campaign.return_value = doc
         mock_store.save_heyreach_result = MagicMock()
         mock_store.set_heyreach_creating = MagicMock()
