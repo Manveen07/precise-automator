@@ -657,4 +657,35 @@
   })();
 </script>
 {% endif %}
+{% if campaign.has_linkedin_steps %}
+<script>
+  (() => {
+    // Reconciliation poller: runs on every load for a short window regardless of
+    // heyreach_creating, so a page rendered right as background state settles
+    // (heyreach_campaign_id/url/status changed between render and now) self-corrects
+    // instead of showing stale HeyReach data indefinitely.
+    const statusUrl = "/api/campaigns/{{ campaign.id }}/status";
+    const snapshot = {
+      heyreach_campaign_url: {{ campaign.heyreach_campaign_url | tojson }},
+      heyreach_status: {{ campaign.heyreach_status | tojson }},
+      heyreach_creating: {{ campaign.heyreach_creating | tojson }},
+    };
+    let attempts = 0;
+    const poll = async () => {
+      attempts += 1;
+      try {
+        const r = await fetch(statusUrl, { headers: { Accept: "application/json" } });
+        if (r.ok) {
+          const p = await r.json();
+          const drifted = p.heyreach_campaign_url !== snapshot.heyreach_campaign_url
+            || p.heyreach_creating !== snapshot.heyreach_creating;
+          if (drifted) { window.location.reload(); return; }
+        }
+      } catch (_) {}
+      if (attempts < 5) window.setTimeout(poll, 3000);  // ~15s window
+    };
+    window.setTimeout(poll, 3000);
+  })();
+</script>
+{% endif %}
 {% endblock %}
