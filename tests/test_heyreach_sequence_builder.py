@@ -254,3 +254,21 @@ def test_to_heyreach_message_fallback_strips_custom_placeholders():
     assert "{FIRST_NAME}" not in fb
     assert fb == "there, I've spent a lot of time in healthcare."
 
+
+def test_to_heyreach_message_fallback_preserves_paragraph_breaks():
+    # Fallback must keep the same \n\n paragraph structure as the message —
+    # stripping placeholder lines must not flatten real paragraph breaks.
+    body = (
+        "{{first_name}} , \n"
+        "{{personalized_first_line}}\n"
+        "I've spent a lot of time in regulated categories (Ally, MetLife, a few others). \n\n"
+        "My team put together a report that features {{company}}.\n"
+        "Happy to send it over."
+    )
+    msg, fb = to_heyreach_message(body)
+    assert msg.count("\n\n") == fb.count("\n\n") == 1
+    assert fb == (
+        "there, I've spent a lot of time in regulated categories (Ally, MetLife, a few others).\n\n"
+        "My team put together a report that features your company. Happy to send it over."
+    )
+

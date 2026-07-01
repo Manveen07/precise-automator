@@ -68,8 +68,13 @@ def to_heyreach_message(body: str, *, collapse_whitespace: bool = False) -> tupl
     fallback = re.sub(r"\bthere\s+([,\.!?])", r"there\1", fallback)
     # Collapse multiple spaces left by removed placeholders
     fallback = re.sub(r"[ \t]+", " ", fallback)
-    # Remove lines that are now empty or whitespace-only after placeholder removal
-    fallback = "\n".join(line.strip() for line in fallback.splitlines() if line.strip())
+    # Drop lines that are now empty/whitespace-only (a placeholder was the whole line),
+    # but preserve real paragraph breaks (\n\n) between the surviving lines/paragraphs.
+    fallback = "\n\n".join(
+        "\n".join(line.strip() for line in para.splitlines() if line.strip())
+        for para in fallback.split("\n\n")
+    )
+    fallback = re.sub(r"\n{3,}", "\n\n", fallback)
     fallback = fallback.strip()
     return message, fallback
 
